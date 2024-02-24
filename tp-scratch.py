@@ -50,13 +50,14 @@ def plot_observation_2(observation, show=True, color=pallet[0], obs_number=1, ob
         ax.plot(x_axis, norm.pdf(x_axis, mu, sigma), color=color, label=label)
     elif obs_type == Distributions.GAMMA:
         # Estimate the parameters of the Gamma distribution
-        alpha_hat, loc_hat, beta_hat_inv = gamma.fit(observation)
-        beta_hat = 1 / beta_hat_inv  # Convert rate to scale
+        alpha_hat, loc_hat, beta_hat_inv = gamma.fit(observation, floc=0)
+        # beta_hat = 1 / beta_hat_inv  # TODO: Analyze Convert rate to scale if necessary !!
+        # TODO https://danielhnyk.cz/fitting-distribution-histogram-using-python/
         # Print estimated parameters
         print(f"Estimated alpha (shape): {alpha_hat}")
-        print(f"Estimated beta (scale): {beta_hat}")
+        print(f"Estimated beta (scale): {beta_hat_inv}")
         label = ""
-        ax.plot(x_axis, gamma.pdf(x_axis, a=alpha_hat, scale=beta_hat), color=color, label=label)
+        ax.plot(x_axis, gamma.pdf(x_axis, alpha_hat, loc_hat, beta_hat_inv), color=color, label=label)
     ax.set_title(f"{obs_type} generated Observation #{obs_number}")
     ax.legend()
     # Adjust y-axis
