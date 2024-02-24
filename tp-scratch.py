@@ -59,8 +59,27 @@ def generate_data(n_observations: int, k_parameters: int = 2) -> torch.Tensor:
     return samples
 
 
-samples = generate_data(200, 1)
+#samples = generate_data(200, 1)
 
-for index, value in enumerate(samples):
-    plot_observation(value, color=pallet[index % len(pallet)], obs_number=index + 1)
-    plot_observation_2(value, color=pallet[index % len(pallet)], obs_number=index + 1)
+#for index, value in enumerate(samples):
+#    plot_observation(value, color=pallet[index % len(pallet)], obs_number=index + 1)
+#    plot_observation_2(value, color=pallet[index % len(pallet)], obs_number=index + 1)
+
+
+#  Genera una matris k x 2 con mu y sigma aleatorios
+def init_random_parameters(k_parameters=2):
+    mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
+    sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
+    return torch.stack((mus, sigmas), dim=1)
+
+
+x = init_random_parameters()
+
+
+def pretty_print_k2_matrix(matrix):
+    latex_str = "\\begin{pmatrix}"
+    for row in x:
+        latex_str += " {:.4f} & {:.4f} \\\\".format(row[0].item(), row[1].item())
+    latex_str += " \\end{pmatrix}"
+    print(latex_str)
+
