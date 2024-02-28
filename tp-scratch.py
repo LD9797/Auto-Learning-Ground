@@ -1,8 +1,12 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 import torch
+import math
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.stats import gamma
 from enum import Enum
+
 
 MU_SPREAD_COEFFICIENT = 20
 MU_SHIFT_COEFFICIENT = 30
@@ -73,7 +77,7 @@ def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.
     # Create distributions
     distributions = torch.distributions.Normal(mus, sigmas)
     # Exact samples
-    samples = distributions.sample(torch.Size([n_observations,])).t()
+    samples = distributions.sample(torch.Size([n_observations, ])).t()
     return samples
 
 
@@ -95,11 +99,7 @@ def generate_data(n_observations: int, k_parameters: int = 2, distribution=Distr
         return samples
 
 
-
-samples = generate_data(200, 1, distribution=Distributions.GAMMA)
-plot_observation_2(samples[0], obs_type=Distributions.GAMMA)
-
-#for index, value in enumerate(samples):
+# for index, value in enumerate(samples):
 #    plot_observation(value, color=pallet[index % len(pallet)], obs_number=index + 1)
 #    plot_observation_2(value, color=pallet[index % len(pallet)], obs_number=index + 1)
 
@@ -118,3 +118,86 @@ def latex_print_k2_matrix(matrix):
     latex_str += " \\end{pmatrix}"
     print(latex_str)
 
+
+def calculate_likelihood_gaussian_dataset(x_n, mu_k, sigma_k):
+    n = x_n.shape[0]
+    return (-(n / 2) * torch.log(torch.tensor(2 * torch.pi)) - n * torch.log(sigma_k) - (
+                1 / (2 * sigma_k ** 2)) * torch.sum((x_n - mu_k) ** 2))
+
+
+def calculate_likelihood_dataset_alt(samples: torch.tensor, parameters: torch.tensor, k_parameters: int):
+    mu_k = parameters[:, 0][:, None]
+    sigma_k = parameters[:, 1][:, None]
+    likelihood = torch.log(1/(torch.sqrt(2 * torch.pi * sigma_k**2))) + torch.log(torch.exp((-1/2) * ((samples.repeat(k_parameters, 1) - mu_k) / sigma_k)**2))
+    #torch.nan_to_num((1 / torch.sqrt(2 * math.pi * std**2)) * math.e**(-(1/2) * ((samples.repeat(2, 1) - mean) / std)**2))
+    return likelihood
+
+
+def calculate_likelihood_gaussian_observation(x, mu_k, sigma_k):
+    return (torch.log(1/(torch.sqrt(2 * torch.pi * sigma_k**2))) +
+            torch.log(torch.exp((-1/2) * ((x - mu_k) / sigma_k)**2)))
+
+
+def test_calculate_likelihood_gaussian_observation():
+    samples = generate_data_gaussian(100, 1)
+    sample = samples[0]
+    # TODO justificar calculo de metodos
+    real_mu = torch.mean(sample)
+    real_sigma = torch.std(sample, unbiased=True)
+    random_params = init_random_parameters(1)
+    fake_mu = random_params[0][0]
+    fake_sigma = random_params[0][1]
+    fake_likelihood = calculate_likelihood_gaussian_dataset(sample, fake_mu, fake_sigma)
+    real_likelihood = calculate_likelihood_gaussian_dataset(sample, real_mu, real_sigma)
+    assert real_likelihood > fake_likelihood
+
+
+#  Calcula la pertenencia de cada observación a los parámetros
+#  Se utiliza one hot vector
+def calculate_membership_dataset(x_dataset, parameters_matrix):
+    likelihood_matrix = []
+    for dataset in x_dataset:
+        for data in dataset:
+            data_likelihood = []
+            for matrix in parameters_matrix:
+                mu = matrix[0]
+                sigma = matrix[1]
+                likelihood = calculate_likelihood_gaussian_observation(data, mu, sigma)
+                data_likelihood.append(likelihood)
+            for index in range(len(data_likelihood)):
+                data_likelihood[index] = 0 if data_likelihood[index] != max(data_likelihood) else 1
+            likelihood_matrix.append(data_likelihood)
+    likelihood_matrix = torch.tensor(likelihood_matrix)
+    return likelihood_matrix
+
+
+samples = generate_data_gaussian(20, 2)
+parameters = init_random_parameters(2)
+
+# likelihood = calculate_likelihood_dataset_alt(samples, parameters)
+
+likelihood = calculate_likelihood_dataset_alt(samples[0], parameters, 2)
+pass
+
+
+def calculate_membership_gaussian_dataset(x_n, mu_k, sigma_k):
+    original = calculate_likelihood_gaussian_dataset(x_n, mu_k, sigma_k)
+    transpose_o = torch.t(original)
+    max_values = torch.amax(transpose_o, 1)
+    return torch.where(original == max_values, 1.0, 0.0)
+
+
+def test_calculate_membership_gaussian_dataset():
+    samples = generate_data_gaussian(100, 1)
+    sample = samples[0]
+    # TODO justificar calculo de metodos
+    real_mu = torch.mean(sample)
+    real_sigma = torch.std(sample, unbiased=True)
+    random_params = init_random_parameters(1)
+    fake_mu = random_params[0][0]
+    fake_sigma = random_params[0][1]
+    membership1 = calculate_membership_gaussian_dataset(sample, fake_mu, fake_sigma)
+    membership2 = calculate_membership_gaussian_dataset(sample, real_mu, real_sigma)
+
+    print('Membership1 ->\n', membership1)
+    print('Membership2 ->\n', membership2)
