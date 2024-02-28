@@ -104,7 +104,7 @@ plot_observation_2(samples[0], obs_type=Distributions.GAMMA)
 #    plot_observation_2(value, color=pallet[index % len(pallet)], obs_number=index + 1)
 
 
-#  Genera una matris k x 2 con mu y sigma aleatorios
+#  Genera una matriz k x 2 con mu y sigma aleatorios
 def init_random_parameters(k_parameters=2):
     mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
     sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
