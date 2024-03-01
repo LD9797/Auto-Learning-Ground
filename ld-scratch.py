@@ -63,10 +63,26 @@ def calculate_membership_dataset(observations, parameters):
     return one_hot_membership_matrix
 
 
-sample = generate_data_gaussian(200, k_parameters=2)
-plot_observation(sample)
+#  Combinación de la funcion vectorizada y de for de la progra pasada
+def recalculate_parameters(x_dataset, membership_data):
+    values_per_membership = torch.transpose(membership_data, 0, 1) * x_dataset
+    new_parameters = []
+    for t_membership in values_per_membership:
+        non_zero_mask = t_membership != 0
+        t_membership = t_membership[non_zero_mask]
+        new_mu = torch.mean(t_membership)
+        new_std = torch.std(t_membership)
+        new_parameters.append([new_mu, new_std])
+    return torch.Tensor(new_parameters)
+
+
+samples = generate_data_gaussian(200, k_parameters=2)
+# Unir los tensores
+samples = torch.flatten(samples)
+print(samples)
+# plot_observation(samples)
 random_parameters = init_random_parameters(2)
-sample_likelihood = calculate_membership_dataset(sample[0], random_parameters)
-
-
-#  torch.flatten(sample)
+print(random_parameters)
+membership_matrix = calculate_membership_dataset(samples, random_parameters)
+recalculated_parameters = recalculate_parameters(samples, membership_matrix)
+print(recalculated_parameters)
