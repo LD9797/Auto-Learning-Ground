@@ -201,3 +201,30 @@ def test_calculate_membership_gaussian_dataset():
 
     print('Membership1 ->\n', membership1)
     print('Membership2 ->\n', membership2)
+
+
+# Assuming observations is a tensor of shape [n, d], where n is the number of observations
+# and mus (mu) and sigmas (sigma) are tensors of shape [m, d], where m is the number of distributions
+def compute_likelihood(observations, mus, sigmas):
+    # Ensure the shapes are [n, 1, d] for observations and [1, m, d] for mus and sigmas for broadcasting
+    observations_expanded = observations.unsqueeze(-1)  # Shape becomes [n, 1, d]
+    mus_expanded = mus.unsqueeze(0)
+    sigmas_expanded = sigmas.unsqueeze(0)
+    
+    diff = observations_expanded - mus_expanded  # Difference term
+    exponent = -0.5 * ((diff / sigmas_expanded) ** 2)  # Exponent term
+    coeff = 1 / (sigmas_expanded * torch.sqrt(torch.tensor(2 * torch.pi)))  # Coefficient term
+    likelihoods = coeff * torch.exp(exponent)
+
+    # To get the total likelihood for each observation across all Gaussians, you might want to sum or log-sum
+    # For simplicity, here we just return the raw likelihoods
+    return likelihoods
+
+random_parameters = init_random_parameters(3)
+
+mean = random_parameters[:, 0]
+std = random_parameters[:, 1]
+
+# OJO ! Usar torch.stack(dataset) si el dataset no viene en un tensor 
+likelihood = compute_likelihood(torch.stack(dataset), mean, std)
+print(likelihood)
