@@ -4,6 +4,8 @@ import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from torch_kmeans import KMeans
+torch.set_printoptions(sci_mode=False)
+
 
 
 MU_SPREAD_COEFFICIENT = 10
@@ -132,22 +134,36 @@ expectation_maximization()
 
 
 def heuristic_improvement(test_data):
-    new_params = []
+   
+    #test_data = generate_data_gaussian(20)
     model = KMeans(n_clusters=test_data.size(0))
 
     test_data = test_data.unsqueeze(2)
     result = model(test_data)
-    print("Centroides: ", result.centers)  # Estimación de Mu
 
-    new_params.append(result.centers[0, 0])
-    new_params.append(result.centers[1, 0])
+    print("Centers: ", result.centers)
+    print("Inertia: ",result.inertia)
+        
+        #Estimación de Mu
+    centroides = result.centers
+    centroides = centroides.flatten()
+    centroides = centroides[::2]
+    centroides = centroides.reshape(2,1)
+    print("Tensor de centroides ajustados:", centroides)
+        
+    # Estimación de Sigmas
+    varianza = (test_data.size(0) / result.inertia[0]), (test_data.size(0) / result.inertia[1])
+    varianza = torch.tensor(varianza)
+    varianza = varianza.reshape(2,1)
+    print("Tensor de varianza:", varianza)
 
-    print("Inertia: ", result.inertia)  # Estimación de Sigmas
+    
+    new_params = torch.cat((centroides, varianza),dim=1)
+    #new_params = torch.round(new_params,decimals=4)
 
-    new_params.append(test_data.size(0) / result.inertia[0])
-    new_params.append(test_data.size(0) / result.inertia[1])
+    #print("New param: ", new_params)
 
     return new_params
 
-
-heuristic_improvement(test_data=generate_data_gaussian(20))
+randomdata = generate_data_gaussian(200)
+heuristic_improvement(randomdata)
