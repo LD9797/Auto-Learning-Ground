@@ -3,6 +3,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from torch_kmeans import KMeans
 
 
 MU_SPREAD_COEFFICIENT = 10
@@ -19,9 +20,9 @@ pallet = ["#9E0000", "#4F9E00", "#009E9E"]
 def init_random_parameters(k_parameters=2, initial_parameters=False):
     if initial_parameters:
         # Para generar una segregación más visible entre los datos iniciales
-        my_range = torch.range(1, 5, 0.5)
-        rand_index = torch.randint(0, len(my_range), (1,)).item()
-        sigma_spread = my_range[rand_index] + torch.rand(1).item()
+        sigma_range = torch.range(1, 5, 0.5)
+        sigma_rand_index = torch.randint(0, len(sigma_range), (1,)).item()
+        sigma_spread = sigma_range[sigma_rand_index] + torch.rand(1).item()
         mu_range = torch.range(MU_SHIFT_COEFFICIENT, MU_SHIFT_COEFFICIENT * k_parameters, MU_SHIFT_COEFFICIENT)
         mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + mu_range
         sigmas = torch.abs(torch.randn(k_parameters) * sigma_spread) + SIGMA_SHIFT_COEFFICIENT
@@ -129,3 +130,24 @@ def expectation_maximization(observations=200, k_parameters=2, iterations=5):
 
 expectation_maximization()
 
+
+def heuristic_improvement(test_data):
+    new_params = []
+    model = KMeans(n_clusters=test_data.size(0))
+
+    test_data = test_data.unsqueeze(2)
+    result = model(test_data)
+    print("Centroides: ", result.centers)  # Estimación de Mu
+
+    new_params.append(result.centers[0, 0])
+    new_params.append(result.centers[1, 0])
+
+    print("Inertia: ", result.inertia)  # Estimación de Sigmas
+
+    new_params.append(test_data.size(0) / result.inertia[0])
+    new_params.append(test_data.size(0) / result.inertia[1])
+
+    return new_params
+
+
+heuristic_improvement(test_data=generate_data_gaussian(20))
