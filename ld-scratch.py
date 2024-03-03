@@ -16,7 +16,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
 
 
+def init_random_parameters(k_parameters=2):
+    mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
+    sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
+    return torch.stack((mus, sigmas), dim=1)
+
+
 def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.Tensor:
+    
     mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
     sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
     distributions = torch.distributions.Normal(mus, sigmas)
@@ -24,27 +31,27 @@ def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.
     return samples
 
 
-def plot_observation(observation: torch.Tensor, show=True, color=pallet[0], obs_number=1):
-    fig, ax = plt.subplots()
+def plot_observation(observation: torch.Tensor, show=True, color=pallet[0], title="", show_hist=True, show_curve=True,
+                     fig=None, ax=None, y_adjustment=True):
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
     x_axis = torch.arange(observation.min(), observation.max(), 0.01)
-    ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
+    if show_hist:
+        ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
     ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
     mu = torch.mean(observation)
     sigma = torch.std(observation, unbiased=True)
     label = fr'$\mu={round(mu.item(), 2)},\ \sigma={round(sigma.item(), 2)}$'
-    ax.plot(x_axis, norm.pdf(x_axis, mu, sigma), color=color, label=label)
-    ax.set_title(f"Generated Gaussian Observation #{obs_number}")
-    ax.legend()
-    y_min, y_max = ax.get_ylim()
-    ax.set_ylim(y_min - 0.01, y_max)
+    if show_curve:
+        ax.plot(x_axis, norm.pdf(x_axis, mu, sigma), color=color, label=label)
+        ax.legend()
+    if title != "":
+        ax.set_title(title)
+    if y_adjustment:
+        y_min, y_max = ax.get_ylim()
+        ax.set_ylim(y_min - 0.01, y_max)
     if show:
         plt.show()
-
-
-def init_random_parameters(k_parameters=2):
-    mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
-    sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
-    return torch.stack((mus, sigmas), dim=1)
 
 
 def calculate_likelihood_gaussian_observation(x_n, mu_k, sigma_k):
@@ -72,17 +79,57 @@ def recalculate_parameters(x_dataset, membership_data):
         t_membership = t_membership[non_zero_mask]
         new_mu = torch.mean(t_membership)
         new_std = torch.std(t_membership)
+        if new_mu.item() != new_mu.item() or new_std.item() != new_std.item():  # if nan
+            params = init_random_parameters(1)
+            new_mu = params[0][0]
+            new_std = params[0][1]
         new_parameters.append([new_mu, new_std])
     return torch.Tensor(new_parameters)
 
 
-samples = generate_data_gaussian(200, k_parameters=2)
+#  Graficar las distribuciones aleatorias junto con las observaciones
+def plot_gaussian_distribution_and_observations(distribution_parameters, observations, show=False):
+    fig, ax = plt.subplots()
+    if observations.dim() > 1:
+        for index, sample in enumerate(observations):
+            plot_observation(sample, color=pallet[index % 3], show=False, show_hist=False, show_curve=False, fig=fig, ax=ax,
+                         y_adjustment=False)
+    else:
+        plot_observation(observations, show=False, show_hist=False, show_curve=False, fig=fig, ax=ax,
+                         y_adjustment=False)
+    param_number = 1
+    for parameters in distribution_parameters:
+        mu = parameters[0]
+        sigma = parameters[1]
+        x_axis = torch.arange(mu / 2, mu * 2, 0.01)
+        plt.plot(x_axis.numpy(), norm.pdf(x_axis.numpy(), mu.numpy(), sigma.numpy()),
+                 label=r'$\mu_' + str(param_number) + r'=' + str(round(mu.item(), 2)) +
+                       r',\ \sigma_' + str(param_number) + '=' + str(round(sigma.item(), 2)) + r'$')
+        param_number += 1
+    if show:
+        plt.legend()
+        plt.show()
+
+
+def expectation_maximization(observations=200, k_parameters=2, iterations=5):
+    my_data = generate_data_gaussian(observations, k_parameters)
+    parameters = init_random_parameters(k_parameters)
+    plot_gaussian_distribution_and_observations(parameters, my_data, show=True)
+    for iteration in range(iterations):
+        membership_data = calculate_membership_dataset(torch.flatten(my_data), parameters)
+        parameters = recalculate_parameters(torch.flatten(my_data), membership_data)
+        plot_gaussian_distribution_and_observations(parameters, my_data, show=True)
+
+
+expectation_maximization()
+
+#samples = generate_data_gaussian(200, k_parameters=2)
 # Unir los tensores
-samples = torch.flatten(samples)
-print(samples)
+#samples = torch.flatten(samples)
+#print(samples)
 # plot_observation(samples)
-random_parameters = init_random_parameters(2)
-print(random_parameters)
-membership_matrix = calculate_membership_dataset(samples, random_parameters)
-recalculated_parameters = recalculate_parameters(samples, membership_matrix)
-print(recalculated_parameters)
+#random_parameters = init_random_parameters(2)
+#print(random_parameters)
+#membership_matrix = calculate_membership_dataset(samples, random_parameters)
+#recalculated_parameters = recalculate_parameters(samples, membership_matrix)
+#print(recalculated_parameters)
