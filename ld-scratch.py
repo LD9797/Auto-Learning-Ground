@@ -10,20 +10,30 @@ MU_SHIFT_COEFFICIENT = 30
 SIGMA_SPREAD_COEFFICIENT = 1.5
 SIGMA_SHIFT_COEFFICIENT = 3
 
-pallet = ["#1F77B4", "#B41F77", "#77B41F"]
+pallet = ["#9E0000", "#4F9E00", "#009E9E"]
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using {device}")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print(f"Using {device}")
 
 
-def init_random_parameters(k_parameters=2):
-    mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
-    sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
+def init_random_parameters(k_parameters=2, initial_parameters=False):
+    if initial_parameters:
+        # Para generar una segregación más visible entre los datos iniciales
+        my_range = torch.range(1, 5, 0.5)
+        rand_index = torch.randint(0, len(my_range), (1,)).item()
+        sigma_spread = my_range[rand_index] + torch.rand(1).item()
+        mu_range = torch.range(MU_SHIFT_COEFFICIENT, MU_SHIFT_COEFFICIENT * k_parameters, MU_SHIFT_COEFFICIENT)
+        mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + mu_range
+        sigmas = torch.abs(torch.randn(k_parameters) * sigma_spread) + SIGMA_SHIFT_COEFFICIENT
+    else:
+        # Para generar una inicialización más aleatoria sin considerar tanto la segregación de los datos
+        mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
+        sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
     return torch.stack((mus, sigmas), dim=1)
 
 
 def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.Tensor:
-    original_parameters = init_random_parameters(k_parameters)
+    original_parameters = init_random_parameters(k_parameters, initial_parameters=True)
     distributions = torch.distributions.Normal(original_parameters[:, 0][:, None].squeeze(1),
                                                original_parameters[:, 1][:, None].squeeze(1))
     samples = distributions.sample(torch.Size([n_observations,])).t()
