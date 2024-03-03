@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 
 
-MU_SPREAD_COEFFICIENT = 20
+MU_SPREAD_COEFFICIENT = 10
 MU_SHIFT_COEFFICIENT = 30
 SIGMA_SPREAD_COEFFICIENT = 1.5
 SIGMA_SHIFT_COEFFICIENT = 3
@@ -17,16 +17,15 @@ print(f"Using {device}")
 
 
 def init_random_parameters(k_parameters=2):
-    mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
+    mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
     sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
     return torch.stack((mus, sigmas), dim=1)
 
 
 def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.Tensor:
-    
-    mus = torch.randn(k_parameters) * MU_SPREAD_COEFFICIENT + MU_SHIFT_COEFFICIENT
-    sigmas = torch.abs(torch.randn(k_parameters) * SIGMA_SPREAD_COEFFICIENT + SIGMA_SHIFT_COEFFICIENT)
-    distributions = torch.distributions.Normal(mus, sigmas)
+    original_parameters = init_random_parameters(k_parameters)
+    distributions = torch.distributions.Normal(original_parameters[:, 0][:, None].squeeze(1),
+                                               original_parameters[:, 1][:, None].squeeze(1))
     samples = distributions.sample(torch.Size([n_observations,])).t()
     return samples
 
@@ -35,7 +34,7 @@ def plot_observation(observation: torch.Tensor, show=True, color=pallet[0], titl
                      fig=None, ax=None, y_adjustment=True):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-    x_axis = torch.arange(observation.min(), observation.max(), 0.01)
+    x_axis = torch.arange(observation.min().item(), observation.max().item(), 0.01)
     if show_hist:
         ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
     ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
@@ -81,8 +80,8 @@ def recalculate_parameters(x_dataset, membership_data):
         new_std = torch.std(t_membership)
         if new_mu.item() != new_mu.item() or new_std.item() != new_std.item():  # if nan
             params = init_random_parameters(1)
-            new_mu = params[0][0]
-            new_std = params[0][1]
+            new_mu = params[0][0] #params[0]
+            new_std = params[0][1] #params[1]
         new_parameters.append([new_mu, new_std])
     return torch.Tensor(new_parameters)
 
