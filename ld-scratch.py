@@ -79,7 +79,6 @@ def calculate_membership_dataset(observations, parameters):
     return one_hot_membership_matrix
 
 
-#  Combinación de la funcion vectorizada y de for de la progra pasada
 def recalculate_parameters(x_dataset, membership_data):
     values_per_membership = torch.transpose(membership_data, 0, 1) * x_dataset
     new_parameters = []
@@ -90,31 +89,29 @@ def recalculate_parameters(x_dataset, membership_data):
         new_std = torch.std(t_membership)
         if new_mu.item() != new_mu.item() or new_std.item() != new_std.item():  # if nan
             params = init_random_parameters(1)
-            new_mu = params[0][0] #params[0]
-            new_std = params[0][1] #params[1]
+            new_mu = params[0][0]
+            new_std = params[0][1]
         new_parameters.append([new_mu, new_std])
     return torch.Tensor(new_parameters)
 
 
-#  Graficar las distribuciones aleatorias junto con las observaciones
+#  Plot random distributions alongside the generated observations
 def plot_gaussian_distribution_and_observations(distribution_parameters, observations, show=False):
     fig, ax = plt.subplots()
     if observations.dim() > 1:
         for index, sample in enumerate(observations):
-            plot_observation(sample, color=pallet[index % 3], show=False, show_hist=False, show_curve=False, fig=fig, ax=ax,
-                         y_adjustment=False)
+            plot_observation(sample, color=pallet[index % 3], show=False, show_hist=False, show_curve=False, fig=fig,
+                             ax=ax, y_adjustment=False)
     else:
         plot_observation(observations, show=False, show_hist=False, show_curve=False, fig=fig, ax=ax,
                          y_adjustment=False)
-    param_number = 1
-    for parameters in distribution_parameters:
+    for index, parameters in enumerate(distribution_parameters):
         mu = parameters[0]
         sigma = parameters[1]
         x_axis = torch.arange(mu / 2, mu * 2, 0.01)
         plt.plot(x_axis.numpy(), norm.pdf(x_axis.numpy(), mu.numpy(), sigma.numpy()),
-                 label=r'$\mu_' + str(param_number) + r'=' + str(round(mu.item(), 2)) +
-                       r',\ \sigma_' + str(param_number) + '=' + str(round(sigma.item(), 2)) + r'$')
-        param_number += 1
+                 label=r'$\mu_' + str(index + 1) + r'=' + str(round(mu.item(), 2)) +
+                       r',\ \sigma_' + str(index + 1) + '=' + str(round(sigma.item(), 2)) + r'$')
     if show:
         plt.legend()
         plt.show()
@@ -132,13 +129,3 @@ def expectation_maximization(observations=200, k_parameters=2, iterations=5):
 
 expectation_maximization()
 
-#samples = generate_data_gaussian(200, k_parameters=2)
-# Unir los tensores
-#samples = torch.flatten(samples)
-#print(samples)
-# plot_observation(samples)
-#random_parameters = init_random_parameters(2)
-#print(random_parameters)
-#membership_matrix = calculate_membership_dataset(samples, random_parameters)
-#recalculated_parameters = recalculate_parameters(samples, membership_matrix)
-#print(recalculated_parameters)
