@@ -132,38 +132,42 @@ def expectation_maximization(observations=200, k_parameters=2, iterations=5):
 
 expectation_maximization()
 
-
-def heuristic_improvement(test_data):
+def heuristic_improvement(test_data,k=2):
    
-    #test_data = generate_data_gaussian(20)
-    model = KMeans(n_clusters=test_data.size(0))
+    model = KMeans(n_clusters=k)
 
     test_data = test_data.unsqueeze(2)
     result = model(test_data)
 
-    print("Centers: ", result.centers)
-    print("Inertia: ",result.inertia)
+    #print("Centers: ", result.centers)
+    #print("Inertia: ",result.inertia)
         
-        #Estimación de Mu
+    #Mu estimation
     centroides = result.centers
     centroides = centroides.flatten()
-    centroides = centroides[::2]
-    centroides = centroides.reshape(2,1)
-    print("Tensor de centroides ajustados:", centroides)
+    #print("Tensor de centroides flat:", centroides)
+    centroides = centroides[::k]
+    #print("Centroids pares:", centroides)
+    centroides = centroides.reshape(k,1)
+    #print("Tensor de centroides ajustados:", centroides)
         
-    # Estimación de Sigmas
-    varianza = (test_data.size(0) / result.inertia[0]), (test_data.size(0) / result.inertia[1])
-    varianza = torch.tensor(varianza)
-    varianza = varianza.reshape(2,1)
-    print("Tensor de varianza:", varianza)
+    # Sigma estimation
+    inertia = result.inertia
+    varianza = torch.zeros(k,1)
 
-    
+    for idx, elem in enumerate(inertia):
+        varianza[idx]= test_data.size(1) / elem
+        #print("Indice", test_data.size(1))
+        #print("Elemento", elem)
+
+    #varianza = torch.tensor(varianza)
+    #varianza = varianza.reshape(k,1)
+    #print("Tensor de varianza:", varianza)
+    #print("Tensor de varianza:", varianza.size())
+
     new_params = torch.cat((centroides, varianza),dim=1)
-    #new_params = torch.round(new_params,decimals=4)
-
-    #print("New param: ", new_params)
 
     return new_params
 
-randomdata = generate_data_gaussian(200)
-heuristic_improvement(randomdata)
+sample_data = generate_data_gaussian(20,3)
+heuristic_improvement(sample_data,sample_data.size(0))
