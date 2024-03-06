@@ -3,6 +3,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from torch_kmeans import KMeans
+torch.set_printoptions(sci_mode=False)
+
 
 
 MU_SPREAD_COEFFICIENT = 10
@@ -19,9 +22,9 @@ pallet = ["#9E0000", "#4F9E00", "#009E9E"]
 def init_random_parameters(k_parameters=2, initial_parameters=False):
     if initial_parameters:
         # Para generar una segregación más visible entre los datos iniciales
-        my_range = torch.range(1, 5, 0.5)
-        rand_index = torch.randint(0, len(my_range), (1,)).item()
-        sigma_spread = my_range[rand_index] + torch.rand(1).item()
+        sigma_range = torch.range(1, 5, 0.5)
+        sigma_rand_index = torch.randint(0, len(sigma_range), (1,)).item()
+        sigma_spread = sigma_range[sigma_rand_index] + torch.rand(1).item()
         mu_range = torch.range(MU_SHIFT_COEFFICIENT, MU_SHIFT_COEFFICIENT * k_parameters, MU_SHIFT_COEFFICIENT)
         mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + mu_range
         sigmas = torch.abs(torch.randn(k_parameters) * sigma_spread) + SIGMA_SHIFT_COEFFICIENT
@@ -129,3 +132,42 @@ def expectation_maximization(observations=200, k_parameters=2, iterations=5):
 
 expectation_maximization()
 
+def heuristic_improvement(test_data,k=2):
+   
+    model = KMeans(n_clusters=k)
+
+    test_data = test_data.unsqueeze(2)
+    result = model(test_data)
+
+    #print("Centers: ", result.centers)
+    #print("Inertia: ",result.inertia)
+        
+    #Mu estimation
+    centroides = result.centers
+    centroides = centroides.flatten()
+    #print("Tensor de centroides flat:", centroides)
+    centroides = centroides[::k]
+    #print("Centroids pares:", centroides)
+    centroides = centroides.reshape(k,1)
+    #print("Tensor de centroides ajustados:", centroides)
+        
+    # Sigma estimation
+    inertia = result.inertia
+    varianza = torch.zeros(k,1)
+
+    for idx, elem in enumerate(inertia):
+        varianza[idx]= test_data.size(1) / elem
+        #print("Indice", test_data.size(1))
+        #print("Elemento", elem)
+
+    #varianza = torch.tensor(varianza)
+    #varianza = varianza.reshape(k,1)
+    #print("Tensor de varianza:", varianza)
+    #print("Tensor de varianza:", varianza.size())
+
+    new_params = torch.cat((centroides, varianza),dim=1)
+
+    return new_params
+
+sample_data = generate_data_gaussian(20,3)
+heuristic_improvement(sample_data,sample_data.size(0))
