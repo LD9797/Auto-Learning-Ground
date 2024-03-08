@@ -1,15 +1,18 @@
+import math
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from torch_kmeans import KMeans
+from scipy.stats import gamma
+import math
+# from torch_kmeans import KMeans
 torch.set_printoptions(sci_mode=False)
-
 
 
 MU_SPREAD_COEFFICIENT = 10
 MU_SHIFT_COEFFICIENT = 30
+MU_STEP = 20
 SIGMA_SPREAD_COEFFICIENT = 1.5
 SIGMA_SHIFT_COEFFICIENT = 3
 
@@ -25,7 +28,7 @@ def init_random_parameters(k_parameters=2, initial_parameters=False):
         sigma_range = torch.range(1, 5, 0.5)
         sigma_rand_index = torch.randint(0, len(sigma_range), (1,)).item()
         sigma_spread = sigma_range[sigma_rand_index] + torch.rand(1).item()
-        mu_range = torch.range(MU_SHIFT_COEFFICIENT, MU_SHIFT_COEFFICIENT * k_parameters, MU_SHIFT_COEFFICIENT)
+        mu_range = torch.range(MU_SHIFT_COEFFICIENT, MU_SHIFT_COEFFICIENT * k_parameters, MU_STEP)[0:k_parameters]
         mus = torch.abs(torch.randn(k_parameters)) * MU_SPREAD_COEFFICIENT + mu_range
         sigmas = torch.abs(torch.randn(k_parameters) * sigma_spread) + SIGMA_SHIFT_COEFFICIENT
     else:
@@ -43,18 +46,18 @@ def generate_data_gaussian(n_observations: int, k_parameters: int = 2) -> torch.
     return samples
 
 
-def plot_observation(observation: torch.Tensor, show=True, color=pallet[0], title="", show_hist=True, show_curve=True,
+def plot_observation(observation: torch.Tensor, show=True, color=None, title="", show_hist=True, show_curve=True,
                      fig=None, ax=None, y_adjustment=True):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-    x_axis = torch.arange(observation.min().item(), observation.max().item(), 0.01)
+    ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
     if show_hist:
         ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
-    ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
-    mu = torch.mean(observation)
-    sigma = torch.std(observation, unbiased=True)
-    label = fr'$\mu={round(mu.item(), 2)},\ \sigma={round(sigma.item(), 2)}$'
     if show_curve:
+        x_axis = torch.arange(observation.min().item(), observation.max().item(), 0.01)
+        mu = torch.mean(observation)
+        sigma = torch.std(observation, unbiased=True)
+        label = fr'$\mu={round(mu.item(), 2)},\ \sigma={round(sigma.item(), 2)}$'
         ax.plot(x_axis, norm.pdf(x_axis, mu, sigma), color=color, label=label)
         ax.legend()
     if title != "":
@@ -109,10 +112,12 @@ def plot_gaussian_distribution_and_observations(distribution_parameters, observa
         plot_observation(observations, show=False, show_hist=False, show_curve=False, fig=fig, ax=ax,
                          y_adjustment=False)
     for index, parameters in enumerate(distribution_parameters):
+        min_x = torch.min(observations) - 5
+        max_x = torch.max(observations) + 5
         mu = parameters[0]
         sigma = parameters[1]
-        x_axis = torch.arange(mu / 2, mu * 2, 0.01)
-        plt.plot(x_axis.numpy(), norm.pdf(x_axis.numpy(), mu.numpy(), sigma.numpy()),
+        x_axis = torch.arange(min_x.item(), max_x.item(), 0.01)
+        plt.plot(x_axis, norm.pdf(x_axis, mu, sigma),
                  label=r'$\mu_' + str(index + 1) + r'=' + str(round(mu.item(), 2)) +
                        r',\ \sigma_' + str(index + 1) + '=' + str(round(sigma.item(), 2)) + r'$')
     if show:
@@ -130,44 +135,96 @@ def expectation_maximization(observations=200, k_parameters=2, iterations=5):
         plot_gaussian_distribution_and_observations(parameters, my_data, show=True)
 
 
-expectation_maximization()
+SHAPE_MEAN = 2
+SHAPE_STD = 2
+SCALE_MEAN = 2
+SCALE_STD = 1
+LOC_STEP = 1
 
-def heuristic_improvement(test_data,k=2):
-   
-    model = KMeans(n_clusters=k)
 
-    test_data = test_data.unsqueeze(2)
-    result = model(test_data)
+def generate_data_gamma(n_observations: int, k_parameters: int = 2):
+    shapes = torch.abs(torch.randn(k_parameters)) * SHAPE_STD + SHAPE_MEAN
+    scales = torch.abs(torch.randn(k_parameters)) * SCALE_STD + SCALE_MEAN
+    distributions = torch.distributions.Gamma(shapes, scales)
+    samples = distributions.sample(torch.Size([n_observations, ])).t()
+    loc_range = torch.range(0, k_parameters, LOC_STEP)[0:k_parameters].unsqueeze(-1)
+    samples += loc_range
+    return samples
 
-    #print("Centers: ", result.centers)
-    #print("Inertia: ",result.inertia)
-        
-    #Mu estimation
-    centroides = result.centers
-    centroides = centroides.flatten()
-    #print("Tensor de centroides flat:", centroides)
-    centroides = centroides[::k]
-    #print("Centroids pares:", centroides)
-    centroides = centroides.reshape(k,1)
-    #print("Tensor de centroides ajustados:", centroides)
-        
-    # Sigma estimation
-    inertia = result.inertia
-    varianza = torch.zeros(k,1)
 
-    for idx, elem in enumerate(inertia):
-        varianza[idx]= test_data.size(1) / elem
-        #print("Indice", test_data.size(1))
-        #print("Elemento", elem)
+def plot_observation_gamma(observation: torch.Tensor, show=True, color=None, title="", show_hist=True, show_curve=True,
+                     fig=None, ax=None, y_adjustment=True):
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+    ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
+    if show_hist:
+        ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
+    if show_curve:
+        # loc -> shift the distribution along the x-axis
+        shape, loc, scale = gamma.fit(observation, floc=0)
+        label = fr"$k={round(shape, 2)},\ \theta={round(scale, 2)}$"
+        x_axis = torch.arange(observation.min().item(), observation.max().item(), 0.01)
+        ax.plot(x_axis, gamma.pdf(x_axis, shape, loc, scale), color=color, label=label)
+        ax.legend()
+    if title != "":
+        ax.set_title(title)
+    if y_adjustment:
+        y_min, y_max = ax.get_ylim()
+        ax.set_ylim(y_min - 0.01, y_max)
+    if show:
+        plt.show()
 
-    #varianza = torch.tensor(varianza)
-    #varianza = varianza.reshape(k,1)
-    #print("Tensor de varianza:", varianza)
-    #print("Tensor de varianza:", varianza.size())
 
-    new_params = torch.cat((centroides, varianza),dim=1)
+def calculate_likelihood_gamma_observation(x_n, form_k, scale_th):
+    def gamma_function(x, form, scale):
+        return (x**(form - 1) * torch.exp(-x/scale)) / (math.factorial(form - 1) * scale**form)
+    return gamma_function(x_n, form_k, scale_th)
 
-    return new_params
 
-sample_data = generate_data_gaussian(20,3)
-heuristic_improvement(sample_data,sample_data.size(0))
+gamma_samples = generate_data_gamma(200, k_parameters=3)
+for index, value in enumerate(gamma_samples):
+    plot_observation_gamma(value, color=pallet[index % 3])
+
+
+
+#  expectation_maximization()
+
+# def heuristic_improvement(test_data,k=2):
+#
+#     model = kmeans(n_clusters=k)
+#
+#     test_data = test_data.unsqueeze(2)
+#     result = model(test_data)
+#
+#     #print("centers: ", result.centers)
+#     #print("inertia: ",result.inertia)
+#
+#     #mu estimation
+#     centroides = result.centers
+#     centroides = centroides.flatten()
+#     #print("tensor de centroides flat:", centroides)
+#     centroides = centroides[::k]
+#     #print("centroids pares:", centroides)
+#     centroides = centroides.reshape(k,1)
+#     #print("tensor de centroides ajustados:", centroides)
+#
+#     # sigma estimation
+#     inertia = result.inertia
+#     varianza = torch.zeros(k,1)
+#
+#     for idx, elem in enumerate(inertia):
+#         varianza[idx]= test_data.size(1) / elem
+#         #print("indice", test_data.size(1))
+#         #print("elemento", elem)
+#
+#     #varianza = torch.tensor(varianza)
+#     #varianza = varianza.reshape(k,1)
+#     #print("tensor de varianza:", varianza)
+#     #print("tensor de varianza:", varianza.size())
+#
+#     new_params = torch.cat((centroides, varianza),dim=1)
+#
+#     return new_params
+
+# sample_data = generate_data_gaussian(20,3)
+# heuristic_improvement(sample_data,sample_data.size(0))
