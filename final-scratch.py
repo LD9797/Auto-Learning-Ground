@@ -151,7 +151,7 @@ def plot_gaussian_distribution_and_observations(distribution_parameters, observa
 
 
 def expectation_maximization(samples, iterations=5, distributions_to_plot=3, run_number=1, heuristic=False):
-    parameters = init_random_parameters(samples.size(0)) if not heuristic else  ""#  heuristic_improvement(samples)
+    parameters = init_random_parameters(samples.size(0)) if not heuristic else heuristic_improvement(samples)
     plot_gaussian_distribution_and_observations(parameters, samples, title=f"Iteration #0 | Run #{run_number}")
     plots_to_show = torch.randperm(iterations - 1)[:distributions_to_plot] + 1
     for iteration in range(1, iterations + 1):
@@ -196,7 +196,7 @@ def heuristic_improvement(test_data):
     return new_params
 
 
-# run_algorithm(heuristic=True)
+run_algorithm(heuristic=True)
 
 # Gamma
 
@@ -361,5 +361,5 @@ def run_algorithm_gamma():
         final_parameters.append(result_parameters)
 
 
-run_algorithm_gamma()
+#  run_algorithm_gamma()
 
