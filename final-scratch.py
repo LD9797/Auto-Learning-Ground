@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.stats import gamma
 # Based on https://pypi.org/project/torch-kmeans/
-from torch_kmeans import KMeans
+# from torch_kmeans import KMeans
 
 torch.set_printoptions(sci_mode=False)
 
@@ -72,7 +72,7 @@ def plot_observation(observation, show=True, color=None, title="", show_hist=Tru
 
 def init_random_parameters(k_parameters=2):
     # Creates a range of mus between MU_SHIFT_COEFFICIENT and MU_SHIFT_COEFFICIENT * k_parameters
-    mus = torch.rand(k_parameters) * (MU_SHIFT_COEFFICIENT * k_parameters - MU_SHIFT_COEFFICIENT) + MU_SHIFT_COEFFICIENT
+    mus = torch.rand(k_parameters) * float((MU_SHIFT_COEFFICIENT * k_parameters - MU_SHIFT_COEFFICIENT) + MU_SHIFT_COEFFICIENT)
     # Creates a range of sigmas between SIGMA_SPREAD_COEFFICIENT_START and SIGMA_SPREAD_COEFFICIENT_END
     sigmas = (torch.rand(k_parameters) * (SIGMA_SPREAD_COEFFICIENT_END - SIGMA_SPREAD_COEFFICIENT_START) +
               SIGMA_SPREAD_COEFFICIENT_START)
@@ -131,14 +131,15 @@ def plot_gaussian_distribution_and_observations(distribution_parameters, observa
     else:
         plot_observation(observations, show=False, show_hist=False, fig=fig, ax=ax, y_adjustment=False)
 
+    _, y_max = ax.get_ylim()
     for index, parameters in enumerate(distribution_parameters):
         mu = parameters[0]
         sigma = parameters[1]
         min_value = torch.min(observations)
         max_value = torch.max(observations)
         dist = (max_value - min_value) * BELL_DISTANCE_FACTOR
-        x_axis = torch.arange(min_value.item() - dist, max_value.item() + dist)
-        ax.plot(x_axis, norm.pdf(x_axis, mu, sigma) + BELL_Y_OFFSET,
+        x_axis = torch.arange(min_value.item() - dist, max_value.item() + dist, 0.01)
+        ax.plot(x_axis, norm.pdf(x_axis, mu, sigma) + y_max * 0.1,
                 label=r'$\mu_' + str(index + 1) + r'=' + str(round(mu.item(), 2)) +
                       r',\ \sigma_' + str(index + 1) + '=' + str(round(sigma.item(), 2)) + r'$',
                 color=PALETTE[index % len(PALETTE)])
@@ -151,7 +152,7 @@ def plot_gaussian_distribution_and_observations(distribution_parameters, observa
 
 
 def expectation_maximization(samples, iterations=5, distributions_to_plot=3, run_number=1, heuristic=False):
-    parameters = init_random_parameters(samples.size(0)) if not heuristic else  ""#  heuristic_improvement(samples)
+    parameters = init_random_parameters(samples.size(0)) if not heuristic else heuristic_improvement(samples)
     plot_gaussian_distribution_and_observations(parameters, samples, title=f"Iteration #0 | Run #{run_number}")
     plots_to_show = torch.randperm(iterations - 1)[:distributions_to_plot] + 1
     for iteration in range(1, iterations + 1):
@@ -178,22 +179,23 @@ def run_algorithm(heuristic=False):
 
 
 def heuristic_improvement(test_data):
-    k = test_data.size(0)
-    model = KMeans(n_clusters=k)
-    test_data = test_data.unsqueeze(2)
-    result = model(test_data)
-    # Mu estimation
-    centroides = result.centers
-    centroides = centroides.flatten()
-    centroides = centroides[::k]
-    centroides = centroides.reshape(k, 1)
-    # Sigma estimation
-    inertia = result.inertia
-    varianza = torch.zeros(k, 1)
-    for idx, elem in enumerate(inertia):
-        varianza[idx] = torch.sqrt(elem / test_data.size(1))
-    new_params = torch.cat((centroides, varianza), dim=1)
-    return new_params
+    pass
+    # k = test_data.size(0)
+    # model = KMeans(n_clusters=k)
+    # test_data = test_data.unsqueeze(2)
+    # result = model(test_data)
+    # # Mu estimation
+    # centroides = result.centers
+    # centroides = centroides.flatten()
+    # centroides = centroides[::k]
+    # centroides = centroides.reshape(k, 1)
+    # # Sigma estimation
+    # inertia = result.inertia
+    # varianza = torch.zeros(k, 1)
+    # for idx, elem in enumerate(inertia):
+    #     varianza[idx] = torch.sqrt(elem / test_data.size(1))
+    # new_params = torch.cat((centroides, varianza), dim=1)
+    # return new_params
 
 
 # run_algorithm(heuristic=True)
@@ -228,15 +230,14 @@ def plot_observation_gamma(observation: torch.Tensor, show=True, color=None, tit
                            fig=None, ax=None, y_adjustment=True):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-    ax.scatter(observation, torch.zeros(observation.size()), s=6, alpha=0.5, color=color)
+    ax.scatter(observation, torch.zeros(observation.size()), s=8, alpha=0.5, color=color)
     if show_hist:
         ax.hist(observation, density=True, bins=20, alpha=0.5, color=color)
     if show_curve:
-        # loc -> shift the distribution along the x-axis
-        shape, loc, scale = gamma.fit(observation, floc=0)
+        shape, scale = calculate_gamma_parameters(observation)
         label = fr"$k={round(shape, 2)},\ \theta={round(scale, 2)}$"
         x_axis = torch.arange(observation.min().item(), observation.max().item(), 0.01)
-        ax.plot(x_axis, gamma.pdf(x_axis, shape, loc, scale), color=color, label=label)
+        ax.plot(x_axis, gamma.pdf(x_axis, shape, 0, scale), color=color, label=label)
         ax.legend()
     if title != "":
         ax.set_title(title)
@@ -271,7 +272,7 @@ def plot_gamma_distribution_and_observations(distribution_parameters, observatio
         min_value = torch.min(observations)
         max_value = torch.max(observations)
         dist = (max_value - min_value) * BELL_DISTANCE_FACTOR
-        x_axis = torch.arange(min_value.item() - dist, max_value.item() + dist)
+        x_axis = torch.arange(min_value.item() - dist, max_value.item() + dist, 0.01)
         ax.plot(x_axis, gamma.pdf(x_axis, shape, 0, scale) + BELL_Y_OFFSET,
                 label=r'$k_' + str(index + 1) + r'=' + str(round(shape.item(), 2)) +
                       r',\ \theta_' + str(index + 1) + '=' + str(round(scale.item(), 2)) + r'$',
@@ -304,7 +305,7 @@ def init_random_parameters_gamma(k_parameters=2, n_observations=200):
     shapes = []
     scales = []
     for sample in samples:
-        shape, loc, scale = gamma.fit(sample, floc=0)
+        shape, scale = calculate_gamma_parameters(sample)
         shapes.append(shape)
         scales.append(scale)
     return torch.stack((torch.tensor(shapes), torch.tensor(scales)), dim=1)
@@ -321,7 +322,7 @@ def recalculate_parameters_gamma(x_dataset, membership_data):
             new_shape = params[0][0]
             new_scale = params[0][1]
         else:
-            new_shape, loc, new_scale = gamma.fit(t_membership, floc=0)
+            new_shape, new_scale = calculate_gamma_parameters(t_membership)
         new_parameters.append([new_shape, new_scale])
     return torch.Tensor(new_parameters)
 
@@ -361,5 +362,27 @@ def run_algorithm_gamma():
         final_parameters.append(result_parameters)
 
 
-run_algorithm_gamma()
+def calculate_gamma_parameters(observation):
+    mean = torch.mean(observation)
+    var = torch.var(observation)
+    k = mean ** 2 / var
+    theta = var / mean
+    return k, theta
+
+
+gaussian_data = generate_data(200, init_original_parameters(2))
+expectation_maximization_gamma(gaussian_data)
+
+# Dato Gaussian -> MAX GAMMA | No se adapta bien
+
+gamma_data = generate_data_gamma(200, 2)
+expectation_maximization(gamma_data)
+
+# Dato Gamma -> MAX GAUSSIANO | Si
+
+
+
+# expectation_maximization(gamma_data.unsqueeze(0))
+
+
 
