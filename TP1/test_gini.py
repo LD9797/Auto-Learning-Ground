@@ -20,18 +20,16 @@ data_right = [
     [-44, -55, -61, -41, -66, -72, -68, 1]
 ]
 
-classes = [1, 2, 3, 4]
-
 
 def test_calculate_gini():
     partition = torch.tensor(data)
-    gini = calculate_gini(partition, classes)
+    gini = calculate_gini(partition)
     assert gini.item() == 0.5
 
 
 def test_calculate_empty_gini():
     partition = torch.tensor([])
-    gini = calculate_gini(partition, classes)
+    gini = calculate_gini(partition)
     assert gini.item() == 0
 
 
@@ -40,7 +38,7 @@ def test_calculate_total_gini():
     node_right = NodeCart()
     node_left.data_torch_partition = torch.tensor(data_left)
     node_right.data_torch_partition = torch.tensor(data_right)
-    gini_total = calculate_total_gini(node_left, node_right, classes)
+    gini_total = calculate_total_gini(node_left, node_right)
     assert gini_total.item() == 0.25
 
 

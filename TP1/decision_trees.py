@@ -1,8 +1,7 @@
 import torch
 import pandas
 import numpy as np
-
-CLASSES = [1, 2, 3, 4]
+from gini_functions import calculate_gini, calculate_entropy
 
 
 def read_dataset(csv_name='wifi_localization.txt'):
@@ -108,10 +107,7 @@ class NodeCart:
         param num_classes: K number of classes to discriminate from
         returns the calculated Gini coefficient
         """
-        # TODO
-
-        # return gini
-        pass
+        return calculate_gini(data_partition_torch)
 
     def calculate_entropy(self, data_partition_torch, num_classes=4):
         """
@@ -120,10 +116,7 @@ class NodeCart:
         param num_classes: K number of classes to discriminate from
         returns the calculated Gini coefficient
         """
-        # TODO
-
-        # return gini
-        pass
+        return calculate_entropy(data_partition_torch)
 
     def evaluate_node(self, input_torch):
         """
