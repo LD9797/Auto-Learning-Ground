@@ -2,6 +2,8 @@ import torch
 import pandas
 import numpy as np
 
+CLASSES = [1, 2, 3, 4]
+
 
 def read_dataset(csv_name='wifi_localization.txt'):
     """
@@ -208,3 +210,30 @@ def test_cart(tree, testset_torch):
     # TODO, use tree.evaluate_input(current_observation) for this
     # return accuracy
     pass
+
+
+# TODOs
+
+def calculate_gini(data_partition_torch):
+    gini = calculate_gini_impurity(data_partition_torch)
+    return gini
+
+
+def calculate_gini_impurity(partition):
+    size = partition.shape[0]
+    length = partition.shape[1] - 1
+    if size == 0:  # To handle the division by zero
+        return torch.tensor(0)
+    proportions = torch.Tensor([((partition[:, length] == label).sum() / size)**2 for label in CLASSES])
+    return 1 - torch.sum(proportions)
+
+
+def calculate_total_gini(node_left, node_right):
+    size_left = node_left.data_torch_partition.shape[0]
+    size_right = node_right.data_torch_partition.shape[0]
+    size_total = size_left + size_right
+    gini_left = calculate_gini_impurity(node_left.data_torch_partition)
+    gini_right = calculate_gini_impurity(node_right.data_torch_partition)
+    gini_total = (size_left / size_total) * gini_left + (size_right / size_total) * gini_right
+    return gini_total
+
