@@ -237,3 +237,24 @@ def calculate_total_gini(node_left, node_right):
     gini_total = (size_left / size_total) * gini_left + (size_right / size_total) * gini_right
     return gini_total
 
+
+def calculate_entropy(data_partition_torch):
+    size = data_partition_torch.shape[0]
+    length = data_partition_torch.shape[1] - 1
+    epsilon = torch.tensor(0.0001)
+    _, counts = data_partition_torch[:, length].unique(return_counts=True)
+    probabilities = (counts / size) + epsilon
+    probabilities = probabilities * torch.log(probabilities)
+    entropy = - probabilities.sum()
+    return entropy
+
+
+def calculate_total_entropy(node_left, node_right):
+    size_left = node_left.data_torch_partition.shape[0]
+    size_right = node_right.data_torch_partition.shape[0]
+    size_total = size_left + size_right
+    entropy_left = calculate_entropy(node_left.data_torch_partition)
+    entropy_right = calculate_entropy(node_right.data_torch_partition)
+    entropy_total = (size_left / size_total) * entropy_left + (size_right / size_total) * entropy_right
+    return entropy_total
+
