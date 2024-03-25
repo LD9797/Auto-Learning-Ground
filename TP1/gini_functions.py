@@ -29,11 +29,10 @@ def calculate_entropy(data_partition_torch):
         if size == 0:  # To handle the division by zero
             return torch.tensor(0)
         length = partition.shape[1] - 1
-        epsilon = torch.tensor(0.0001)
+        epsilon = torch.tensor(0.0001)  # Small epsilon to prevent probabilities equal to 0
         _, counts = partition[:, length].unique(return_counts=True)
         probabilities = (counts / size) + epsilon
-        probabilities = probabilities * torch.log(probabilities)
-        entropy = - probabilities.sum()
+        entropy = - torch.sum(probabilities * torch.log(probabilities))
         return entropy
     return calculate_entropy_disorder(data_partition_torch)
 
