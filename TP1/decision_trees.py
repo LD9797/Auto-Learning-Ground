@@ -1,7 +1,7 @@
 import torch
 import pandas
 import numpy as np
-from gini_functions import calculate_gini, calculate_entropy
+from gini_functions import calculate_gini, calculate_entropy, calculate_total_gini
 
 
 def read_dataset(csv_name='wifi_localization.txt'):
@@ -16,6 +16,35 @@ def read_dataset(csv_name='wifi_localization.txt'):
     # targets_torch = torch.tensor(data_frame['ROOM'].values)
     dataset_torch = torch.tensor(data_frame.values)
     return dataset_torch
+
+
+def evaluate_threshold(data, feature_num, gini_function):
+    root_node = NodeCart()
+    root_node.data_torch_partition = data
+    root_node.feature_num = feature_num
+    threshold_values = torch.unique(data[:, feature_num:feature_num + 1].squeeze())
+    value_gini = {}
+
+    for value in threshold_values:
+        root_node.threshold_value = value
+        left_idx = data[:, root_node.feature_num] < root_node.threshold_value
+        right_idx = data[:, root_node.feature_num] >= root_node.threshold_value
+
+        dataset_partition_left = data[left_idx]
+        dataset_partition_right = data[right_idx]
+
+        left_child = NodeCart(current_depth=1)
+        left_child.data_torch_partition = dataset_partition_left
+
+        right_child = NodeCart(current_depth=1)
+        right_child.data_torch_partition = dataset_partition_right
+
+        gini = gini_function(left_child, right_child)
+
+        value_gini[value] = gini
+
+    min_gini = min(value_gini, key=value_gini.get)
+    return {min_gini.item(): value_gini[min_gini].item()}
 
 
 class NodeCart:
@@ -38,6 +67,7 @@ class NodeCart:
         self.accuracy_dominant_class = None  # Tasa de aciertos de esa clase dominante
         # self.num_classes = num_classes
         self.current_depth = current_depth  # Profundidad
+        self.gini_entropy_total_function = None
 
     def to_xml(self, current_str=""):
         """
@@ -92,13 +122,19 @@ class NodeCart:
         return min_thresh, min_feature, min_gini found for the dataset partition when
         selecting the found feature and threshold
         """
-
-        # TODO
-        # return selected cut
         if list_features_selected is None:
             list_features_selected = []
-        # return (min_thresh, min_feature, min_gini)
-        pass
+        num_features = data_torch.shape[1] - 1
+        features_gini = {}
+        for feature in range(num_features):
+            if feature not in list_features_selected:
+                features_gini[feature] = evaluate_threshold(data_torch, feature, self.gini_entropy_total_function)
+        min_key, min_inner_dict = min(features_gini.items(), key=lambda item: next(iter(item[1].values())))
+        result = features_gini[min_key]
+        min_feature = min_key
+        min_thresh = list(result.keys())[0]
+        min_gini = result[min_thresh]
+        return min_thresh, min_feature, min_gini
 
     def calculate_gini(self, data_partition_torch, num_classes=4):
         """
@@ -118,6 +154,7 @@ class NodeCart:
         """
         return calculate_entropy(data_partition_torch)
 
+
     def evaluate_node(self, input_torch):
         """
         Evaluates an input observation within the node.
@@ -131,6 +168,19 @@ class NodeCart:
             return self.node_left.evaluate_node(input_torch)
         else:
             return self.node_right.evaluate_node(input_torch)
+
+
+dataset = read_dataset(csv_name="wifi_localization_reduced.txt")
+node_cart = NodeCart()
+node_cart.data_torch_partition = dataset
+node_cart.gini_entropy_total_function = calculate_total_gini
+node_cart.select_best_feature_and_thresh(data_torch=node_cart.data_torch_partition)
+
+
+
+
+
+
 
 
 class CART:  # Este es el arbol
