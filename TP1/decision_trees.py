@@ -23,7 +23,7 @@ def read_dataset(csv_name='wifi_localization.txt'):
 
 class NodeCart:
 
-    def __init__(self, gini_entropy_total_function=calculate_total_entropy,
+    def __init__(self,
                  gini_entropy_function="GINI",
                  num_classes=4, num_features=7, ref_cart=None, current_depth=0):
         """
@@ -44,7 +44,6 @@ class NodeCart:
         self.num_classes = num_classes
         self.num_features = num_features
         self.current_depth = current_depth  # Profundidad
-        self.gini_entropy_total_function = gini_entropy_total_function
         self.leaf = False
         self.gini_function = gini_entropy_function
 
@@ -79,7 +78,7 @@ class NodeCart:
         return self.leaf
 
     def create_with_children(self, current_depth=0, list_selected_features=None, min_gini=0.000001, max_cart_depth=5,
-                             min_observations=2):
+                             min_observations=2, glob_list_selected_features=None):
         """
         Creates a node by selecting the best feature and threshold, and if needed, creating its children
         param data_torch: dataset with the current partition to deal with in the node
@@ -92,6 +91,9 @@ class NodeCart:
         if list_selected_features is None:
             list_selected_features = []
 
+        if glob_list_selected_features is None:
+            glob_list_selected_features = []
+
         min_thresh, min_feature, min_gini_thresh = (
             self.select_best_feature_and_thresh(data_torch=self.data_torch_partition,
                                                 list_features_selected=list_selected_features))
@@ -99,14 +101,11 @@ class NodeCart:
         self.feature_num = min_feature
         self.threshold_value = min_thresh
         self.gini = min_gini_thresh
-        self.gini_entropy_total_function = min_gini_thresh
         self.current_depth = current_depth
         list_selected_features.append(self.feature_num)
 
-        if (min_gini_thresh <= min_gini or
-                len(list_selected_features) == self.num_features or
-                current_depth == max_cart_depth or
-                self.data_torch_partition.shape[0] <= min_observations):
+        if (min_gini_thresh <= min_gini or len(list_selected_features) == self.num_features or
+                current_depth == max_cart_depth or self.data_torch_partition.shape[0] <= min_observations):
             # This is a leaf
             self.leaf = True
             length = self.data_torch_partition.shape[1] - 1
@@ -123,12 +122,13 @@ class NodeCart:
         dataset_partition_left = self.data_torch_partition[left_idx]
         dataset_partition_right = self.data_torch_partition[right_idx]
 
-        left_child = NodeCart(current_depth=current_depth)
+        left_child = NodeCart(current_depth=current_depth, gini_entropy_function=self.gini_function)
         left_child.data_torch_partition = dataset_partition_left
         left_child.ref_CART = self
 
-        right_child = NodeCart(current_depth=current_depth)
+        right_child = NodeCart(current_depth=current_depth, gini_entropy_function=self.gini_function)
         right_child.data_torch_partition = dataset_partition_right
+        right_child.gini_function = self.gini_function
         right_child.ref_CART = self
 
         current_depth += 1
@@ -139,19 +139,19 @@ class NodeCart:
         unique_features_left = list_selected_features.copy()
         unique_features_right = list_selected_features.copy()
 
-        self.node_left.create_with_children(current_depth, unique_features_left,
-                                            max_cart_depth=max_cart_depth,
-                                            min_gini=min_gini,
-                                            min_observations=min_observations)
-        self.node_right.create_with_children(current_depth, unique_features_right,
-                                             min_gini=min_gini,
-                                             max_cart_depth=max_cart_depth,
-                                             min_observations=min_observations)
+        left_selected = self.node_left.create_with_children(current_depth, unique_features_left,
+                                                            max_cart_depth=max_cart_depth,
+                                                            min_gini=min_gini,
+                                                            min_observations=min_observations)
+        right_selected = self.node_right.create_with_children(current_depth, unique_features_right,
+                                                              min_gini=min_gini,
+                                                              max_cart_depth=max_cart_depth,
+                                                              min_observations=min_observations)
 
-        #list_selected_features.extend(list_selected_features_left)
-        #list_selected_features.extend(list_selected_features_right)
+        glob_list_selected_features.extend(left_selected)
+        glob_list_selected_features.extend(right_selected)
 
-        return list_selected_features
+        return glob_list_selected_features
 
     def select_best_feature_and_thresh(self, data_torch, list_features_selected=None, num_classes=4):
         """
@@ -162,8 +162,8 @@ class NodeCart:
         return min_thresh, min_feature, min_gini found for the dataset partition when
         selecting the found feature and threshold
         """
-        def evaluate_threshold(data, feature_num, gini_entropy_total_function):
-            root_node = NodeCart(calculate_total_gini)
+        def evaluate_feature(data, feature_num, gini_entropy_total_function):
+            root_node = NodeCart()
             root_node.data_torch_partition = data
             root_node.feature_num = feature_num
             threshold_values = torch.unique(data[:, feature_num:feature_num + 1].squeeze())
@@ -186,10 +186,12 @@ class NodeCart:
         if list_features_selected is None:
             list_features_selected = []
         num_features = data_torch.shape[1] - 1
+        if len(list_features_selected) == num_features:
+            raise ValueError("All features have been selected")
         features_gini = {}
         for feature in range(num_features):
             if feature not in list_features_selected:
-                features_gini[feature] = evaluate_threshold(data_torch, feature, self.calculate_total_gini_entropy)
+                features_gini[feature] = evaluate_feature(data_torch, feature, self.calculate_total_gini_entropy)
         min_key, min_inner_dict = min(features_gini.items(), key=lambda item: next(iter(item[1].values())))
         result = features_gini[min_key]
         min_feature = min_key
@@ -266,14 +268,14 @@ class NodeCart:
 
 
 class CART:  # Este es el arbol
-    def __init__(self, dataset_torch, max_cart_depth, min_observations=2):
+    def __init__(self, dataset_torch, max_cart_depth, min_observations=2, gini_entropy_function="GINI"):
         """
         CART has only one root node
         """
         # min observations per node
         self.min_observations = min_observations  # Para evitar sobre ajuste, se definen algunos valores para permitir controlar la complejidad
         # Si el arbol se hace muy complejo puede llegar a ser uno que se sobreajusta a los datos.
-        self.root = NodeCart(calculate_total_entropy, num_classes=4, num_features=7, ref_cart=self)
+        self.root = NodeCart(num_classes=4, num_features=7, ref_cart=self, gini_entropy_function=gini_entropy_function)
         self.root.data_torch_partition = dataset_torch
         self.max_CART_depth = max_cart_depth
         self.list_selected_features = []
@@ -319,11 +321,12 @@ class CART:  # Este es el arbol
         return self.root.evaluate_node(input_torch)
 
 
-def train_cart(dataset_torch, name_xml="", max_cart_depth=5, min_obs_per_leaf=2):
+def train_cart(dataset_torch, name_xml="", max_cart_depth=5, min_obs_per_leaf=2, gini_entropy_function="GINI"):
     """
     Train CART model
     """
-    tree = CART(dataset_torch=dataset_torch, max_cart_depth=max_cart_depth, min_observations=min_obs_per_leaf)
+    tree = CART(dataset_torch=dataset_torch, max_cart_depth=max_cart_depth, min_observations=min_obs_per_leaf,
+                gini_entropy_function=gini_entropy_function)
     tree.build_cart()
     if name_xml:
         tree.to_xml(name_xml)
@@ -334,6 +337,15 @@ def test_cart(tree, testset_torch):
     """
     Test a previously built CART
     """
+    # Entropy 14 vs 3 | 1490 vs 510
+    # Gini 11 vs 6 | 1397 vs 603
+    hits = 0
+    fails = 0
+    for observation in testset_torch:
+        expected = observation[-1]
+        result = tree.evaluate_input(observation)
+        hits += 1 if expected == result else 0
+        fails += 1 if expected != result else 0
     # TODO, use tree.evaluate_input(current_observation) for this
     # return accuracy
     pass
@@ -341,5 +353,25 @@ def test_cart(tree, testset_torch):
 # TODOs
 
 
-dataset = read_dataset(csv_name="wifi_localization_reduced.txt")
-train_cart(dataset, name_xml="cart.xml")
+dataset = read_dataset()
+tree = train_cart(dataset, name_xml="cart.xml", gini_entropy_function="GINI")
+observations = torch.Tensor([
+    [-67, -57, -64, -68, -75, -82, -82, 1],
+    [-68, -55, -73, -65, -76, -82, -82, 1],
+    [-68, -55, -67, -70, -76, -82, -81, 1],
+    [-38, -57, -61, -38, -69, -73, -70, 2],
+    [-39, -62, -58, -37, -69, -73, -72, 2],
+    [-35, -58, -61, -38, -67, -71, -71, 2],
+    [-47, -64, -53, -54, -60, -83, -84, 3],
+    [-45, -63, -57, -55, -58, -79, -85, 3],
+    [-45, -63, -57, -53, -57, -81, -84, 3],
+    [-54, -46, -48, -55, -48, -84, -85, 4],
+    [-58, -53, -44, -62, -52, -84, -88, 4],
+    [-61, -52, -48, -61, -45, -90, -88, 4],
+    [-57, -51, -47, -61, -50, -90, -88, 4],
+    [-58, -56, -51, -65, -53, -87, -87, 4],
+    [-62, -53, -52, -59, -48, -87, -92, 4],
+    [-63, -54, -52, -59, -44, -86, -92, 4],
+    [-57, -58, -52, -66, -46, -86, -90, 4]
+])
+test_cart(tree, dataset)
