@@ -1,7 +1,6 @@
 import torch
 import pandas
 import numpy as np
-from gini_functions import calculate_gini, calculate_entropy, calculate_total_gini, calculate_total_entropy
 
 
 def read_dataset(csv_name='wifi_localization.txt'):
@@ -16,9 +15,6 @@ def read_dataset(csv_name='wifi_localization.txt'):
     # targets_torch = torch.tensor(data_frame['ROOM'].values)
     dataset_torch = torch.tensor(data_frame.values)
     return dataset_torch
-
-
-
 
 
 class NodeCart:
@@ -46,6 +42,8 @@ class NodeCart:
         self.current_depth = current_depth  # Profundidad
         self.leaf = False
         self.gini_function = gini_entropy_function
+        self.hits = 0
+        self.fails = 0
 
     def to_xml(self, current_str=""):
         """
@@ -113,7 +111,6 @@ class NodeCart:
             tags, counts = tag_values.unique(return_counts=True)
             most_common_value = tags[counts.argmax()].item()
             self.dominant_class = most_common_value
-            # self.accuracy_dominant_class = 1
             return list_selected_features
 
         left_idx = self.data_torch_partition[:, self.feature_num] < self.threshold_value
@@ -253,14 +250,18 @@ class NodeCart:
         """
         feature_val_input = input_torch[self.feature_num]
         if self.is_leaf():
-            return self.dominant_class
+            return self.dominant_class, self
         elif feature_val_input < self.threshold_value:
             return self.node_left.evaluate_node(input_torch)
         else:
             return self.node_right.evaluate_node(input_torch)
 
+    def update_accuracy(self):
+        self.accuracy_dominant_class = (self.hits / (self.hits + self.fails)) * 100
+        self.accuracy_dominant_class = round(self.accuracy_dominant_class, 2)
 
-#dataset = read_dataset(csv_name="wifi_localization_reduced.txt")
+
+#dataset = read_dataset(csv_name="wifi_localization_mini.txt")
 #node_cart = NodeCart()
 #node_cart.data_torch_partition = dataset
 #node_cart.gini_entropy_total_function = calculate_total_gini
@@ -343,35 +344,16 @@ def test_cart(tree, testset_torch):
     fails = 0
     for observation in testset_torch:
         expected = observation[-1]
-        result = tree.evaluate_input(observation)
-        hits += 1 if expected == result else 0
-        fails += 1 if expected != result else 0
-    # TODO, use tree.evaluate_input(current_observation) for this
-    # return accuracy
-    pass
+        result, leaf = tree.evaluate_input(observation)
+        if expected == result:
+            leaf.hits += 1
+            leaf.update_accuracy()
+            hits += 1
+        else:
+            leaf.fails += 1
+            leaf.update_accuracy()
+            fails += 1
+    accuracy = (hits / (hits + fails)) * 100
+    return accuracy
 
 # TODOs
-
-
-dataset = read_dataset()
-tree = train_cart(dataset, name_xml="cart.xml", gini_entropy_function="GINI")
-observations = torch.Tensor([
-    [-67, -57, -64, -68, -75, -82, -82, 1],
-    [-68, -55, -73, -65, -76, -82, -82, 1],
-    [-68, -55, -67, -70, -76, -82, -81, 1],
-    [-38, -57, -61, -38, -69, -73, -70, 2],
-    [-39, -62, -58, -37, -69, -73, -72, 2],
-    [-35, -58, -61, -38, -67, -71, -71, 2],
-    [-47, -64, -53, -54, -60, -83, -84, 3],
-    [-45, -63, -57, -55, -58, -79, -85, 3],
-    [-45, -63, -57, -53, -57, -81, -84, 3],
-    [-54, -46, -48, -55, -48, -84, -85, 4],
-    [-58, -53, -44, -62, -52, -84, -88, 4],
-    [-61, -52, -48, -61, -45, -90, -88, 4],
-    [-57, -51, -47, -61, -50, -90, -88, 4],
-    [-58, -56, -51, -65, -53, -87, -87, 4],
-    [-62, -53, -52, -59, -48, -87, -92, 4],
-    [-63, -54, -52, -59, -44, -86, -92, 4],
-    [-57, -58, -52, -66, -46, -86, -90, 4]
-])
-test_cart(tree, dataset)
