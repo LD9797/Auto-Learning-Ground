@@ -1,6 +1,7 @@
 import torch
 import pandas
 import numpy as np
+import random
 
 
 def read_dataset(csv_name='wifi_localization.txt'):
@@ -75,7 +76,7 @@ class NodeCart:
         """
         return self.leaf
 
-    def create_with_children(self, current_depth=0, list_selected_features=None, min_gini=0.000001, max_cart_depth=5,
+    def create_with_children(self, current_depth=0, list_selected_features=None, min_gini=0.000001, max_cart_depth=3,
                              min_observations=2, glob_list_selected_features=None):
         """
         Creates a node by selecting the best feature and threshold, and if needed, creating its children
@@ -107,7 +108,7 @@ class NodeCart:
             # This is a leaf
             self.leaf = True
             length = self.data_torch_partition.shape[1] - 1
-            tag_values = torch.unique(self.data_torch_partition[:, length:length + 1].squeeze())
+            tag_values = self.data_torch_partition[:, length:length + 1].squeeze()
             tags, counts = tag_values.unique(return_counts=True)
             most_common_value = tags[counts.argmax()].item()
             self.dominant_class = most_common_value
@@ -261,25 +262,20 @@ class NodeCart:
         self.accuracy_dominant_class = round(self.accuracy_dominant_class, 2)
 
 
-#dataset = read_dataset(csv_name="wifi_localization_mini.txt")
-#node_cart = NodeCart()
-#node_cart.data_torch_partition = dataset
-#node_cart.gini_entropy_total_function = calculate_total_gini
-#node_cart.select_best_feature_and_thresh(data_torch=node_cart.data_torch_partition)
-
 
 class CART:  # Este es el arbol
-    def __init__(self, dataset_torch, max_cart_depth, min_observations=2, gini_entropy_function="GINI"):
+    # Do not change default values or unit tests will be affected !!
+    def __init__(self, dataset_torch, max_cart_depth=3, min_observations=2, gini_entropy_function="GINI", num_classes=4):
         """
         CART has only one root node
         """
         # min observations per node
-        self.min_observations = min_observations  # Para evitar sobre ajuste, se definen algunos valores para permitir controlar la complejidad
-        # Si el arbol se hace muy complejo puede llegar a ser uno que se sobreajusta a los datos.
-        self.root = NodeCart(num_classes=4, num_features=7, ref_cart=self, gini_entropy_function=gini_entropy_function)
+        self.min_observations = min_observations
+        self.root = NodeCart(num_classes=num_classes, ref_cart=self, gini_entropy_function=gini_entropy_function)
         self.root.data_torch_partition = dataset_torch
         self.max_CART_depth = max_cart_depth
         self.list_selected_features = []
+        self.confusion_matrix = torch.zeros(num_classes, num_classes)
 
     def get_root(self):
         """
@@ -321,8 +317,27 @@ class CART:  # Este es el arbol
         """
         return self.root.evaluate_node(input_torch)
 
+    def update_confusion_matrix(self, estimated_class, real_class):
+        self.confusion_matrix[int(estimated_class) - 1][int(real_class) - 1] += 1
 
-def train_cart(dataset_torch, name_xml="", max_cart_depth=5, min_obs_per_leaf=2, gini_entropy_function="GINI"):
+    def get_f1_scores_per_class(self):
+        def get_metrics(matrix, the_class):
+            tp = matrix[the_class, the_class]
+            fn = torch.sum(matrix[:, the_class]) - tp
+            fp = torch.sum(matrix[the_class, :]) - tp
+            tn = torch.sum(matrix) - tp - fp - fn
+            return tp, tn, fp, fn
+        f1_scores = {}
+        for my_class in range(self.confusion_matrix.size(0)):
+            vp, vn, fp, fn = get_metrics(self.confusion_matrix, my_class)
+            sensibility_tvp = torch.nan_to_num(vp / (fn + vp))
+            accuracy_vpp = torch.nan_to_num(vp / (vp + fp))
+            f1_score = torch.nan_to_num((2 * sensibility_tvp * accuracy_vpp) / (sensibility_tvp + accuracy_vpp))
+            f1_scores[my_class + 1] = f1_score
+        return f1_scores
+
+
+def train_cart(dataset_torch, name_xml="", max_cart_depth=3, min_obs_per_leaf=2, gini_entropy_function="GINI"):
     """
     Train CART model
     """
@@ -345,6 +360,7 @@ def test_cart(tree, testset_torch):
     for observation in testset_torch:
         expected = observation[-1]
         result, leaf = tree.evaluate_input(observation)
+        tree.update_confusion_matrix(result, expected)
         if expected == result:
             leaf.hits += 1
             leaf.update_accuracy()
@@ -356,4 +372,59 @@ def test_cart(tree, testset_torch):
     accuracy = (hits / (hits + fails)) * 100
     return accuracy
 
-# TODOs
+
+# Evaluation
+
+
+# Punto 2.1
+def evaluate_tree_full_dataset(max_cart_depth, gini_entropy_function, min_obs_per_leaf=2):
+    dataset = read_dataset(csv_name="wifi_localization.txt")
+    tree = train_cart(dataset, max_cart_depth=max_cart_depth, gini_entropy_function=gini_entropy_function,
+                      min_obs_per_leaf=min_obs_per_leaf)
+    overall_accuracy = test_cart(tree, dataset)
+    f1_scores = tree.get_f1_scores_per_class()
+    print(f"Overall accuracy: {overall_accuracy}")
+    print(f"F1 scores: {f1_scores}")
+    return overall_accuracy, f1_scores
+
+#evaluate_tree_full_dataset(3, "GINI")
+#evaluate_tree_full_dataset(4, "GINI")
+#evaluate_tree_full_dataset(3, "ENTROPY")
+#evaluate_tree_full_dataset(4, "ENTROPY")
+
+
+# Punto 2.2
+# TODO: remove auto generated comments
+def split_dataset(csv_name='wifi_localization.txt'):
+    data_frame = pandas.read_table(csv_name, sep=r'\s+', names=('A', 'B', 'C', 'D', 'E', 'F', 'G', 'ROOM'),
+                                   dtype={'A': np.int64, 'B': np.float64, 'C': np.float64, 'D': np.float64,
+                                          'E': np.float64, 'F': np.float64, 'G': np.float64, 'ROOM': np.float64})
+    shuffled_values = data_frame.sample(frac=1).reset_index(drop=True).values
+    split_index = int(len(shuffled_values) * 0.7)
+    train_set = shuffled_values[:split_index]
+    test_set = shuffled_values[split_index:]
+    return torch.tensor(train_set), torch.tensor(test_set)
+
+
+def evaluate_train_test_dataset_tree(train_dataset, test_dataset, max_cart_depth, gini_entropy_function, min_obs_per_leaf=2):
+    tree = train_cart(train_dataset, max_cart_depth=max_cart_depth, gini_entropy_function=gini_entropy_function,
+                      min_obs_per_leaf=min_obs_per_leaf)
+    overall_accuracy = test_cart(tree, test_dataset)
+    f1_scores = tree.get_f1_scores_per_class()
+    print(f"Overall accuracy: {overall_accuracy}")
+    print(f"F1 scores: {f1_scores}")
+    return overall_accuracy, f1_scores
+
+
+# TODO Calculate Execution Time
+partitions = [split_dataset() for x in range(10)]
+results_gini = {}
+results_entropy = {}
+for index, partition in enumerate(partitions):
+    results_gini[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="GINI")
+    results_gini[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="GINI")
+    results_entropy[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="ENTROPY")
+    results_entropy[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="ENTROPY")
+
+
+# TODO punto 3
