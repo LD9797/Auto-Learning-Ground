@@ -262,7 +262,6 @@ class NodeCart:
         self.accuracy_dominant_class = round(self.accuracy_dominant_class, 2)
 
 
-
 class CART:  # Este es el arbol
     # Do not change default values or unit tests will be affected !!
     def __init__(self, dataset_torch, max_cart_depth=3, min_observations=2, gini_entropy_function="GINI", num_classes=4):
@@ -417,14 +416,37 @@ def evaluate_train_test_dataset_tree(train_dataset, test_dataset, max_cart_depth
 
 
 # TODO Calculate Execution Time
-partitions = [split_dataset() for x in range(10)]
-results_gini = {}
-results_entropy = {}
-for index, partition in enumerate(partitions):
-    results_gini[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="GINI")
-    results_gini[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="GINI")
-    results_entropy[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="ENTROPY")
-    results_entropy[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="ENTROPY")
+#partitions = [split_dataset() for x in range(10)]
+#results_gini = {}
+#results_entropy = {}
+#for index, partition in enumerate(partitions):
+#    results_gini[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="GINI")
+#    results_gini[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="GINI")
+#    results_entropy[f"{index}, 3"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=3, gini_entropy_function="ENTROPY")
+#    results_entropy[f"{index}, 4"] = evaluate_train_test_dataset_tree(partition[0], partition[1], max_cart_depth=4, gini_entropy_function="ENTROPY")
 
 
 # TODO punto 3
+import optuna
+
+
+def objective(trial):
+    dataset = read_dataset(csv_name="wifi_localization.txt")
+    max_depth = trial.suggest_int('max_depth', 1, 8)
+    tree = train_cart(dataset, max_cart_depth=max_depth, gini_entropy_function="ENTROPY")
+    accuracy = test_cart(tree, dataset)
+    return accuracy
+
+
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=36)
+
+lowest_depth = None
+for trial in study.best_trials:
+    depth = trial.params['max_depth']
+    lowest_depth = depth if lowest_depth is None or depth < lowest_depth else lowest_depth
+
+print(f"Best parameters: {lowest_depth}")
+print(f"Best accuracy: {study.best_value}%")
+
+
