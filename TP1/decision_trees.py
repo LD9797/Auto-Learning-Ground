@@ -149,6 +149,8 @@ class NodeCart:
         glob_list_selected_features.extend(left_selected)
         glob_list_selected_features.extend(right_selected)
 
+        # TODO eliminar duplicados
+
         return glob_list_selected_features
 
     def select_best_feature_and_thresh(self, data_torch, list_features_selected=None, num_classes=4):
