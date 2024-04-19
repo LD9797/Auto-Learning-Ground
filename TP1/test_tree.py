@@ -1,13 +1,10 @@
 from decision_trees import CART, read_dataset, train_cart
 
 
-# TODO, se pueden hacer mas validacioens con la matriz
 def test_cart_gini():
     """
     Test a previously built CART
     """
-    # Entropy 14 vs 3 | 1490 vs 510
-    # Gini 11 vs 6 | 1397 vs 603
     dataset = read_dataset()
     tree = train_cart(dataset, gini_entropy_function="GINI")
     hits = 0
@@ -28,7 +25,6 @@ def test_cart_gini():
     assert accuracy == 95.25
 
 
-# TODO, se pueden hacer mas validacioens con la matriz
 def test_cart_entropy():
     dataset = read_dataset()
     tree = train_cart(dataset, gini_entropy_function="ENTROPY")

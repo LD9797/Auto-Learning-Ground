@@ -57,3 +57,5 @@ def test_full_list_features_select_best_feature_and_thresh():
     assert exc_info.value.args[0] == "All features have been selected"
 
 
+test_gini_select_best_feature_and_thresh()
+
