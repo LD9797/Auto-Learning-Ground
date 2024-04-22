@@ -6,7 +6,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 
 # Read data frame
-df = pd.read_csv('UNSW_NB15_training-set.csv')
+df = pd.read_csv('TP2/UNSW_NB15_training-set.csv')
 
 
 # Explore the dataset
