@@ -1,0 +1,25 @@
+
+Punto 1:
+
+1. En el clasificador del primer punto, para sacar el w hay que usar la formula de pinverse(x) * t ?
+2. Para hacer las clasificaciones se utiliza el producto punto de ese w con los datos ?
+3. Los atributos categoricos codificados con one-hot-vector ya vienen listos en los pasos previos del jupyter ?
+
+Punto 2:
+
+1. Con cuantificaciones, se refiere a las probabilidades de cada observacion para los labels ?
+2. Porque hay que pasarle X ? X es el dataset ? Para que se ocupa si ya se estan pasando las cuantificaciones ?
+3. Porque no hay un parametros para la cantidad de cubetas M ?
+
+Punto 3:
+
+1. Esta es la parte del consejo de modelos, cierto ?
+2. Ok, se entrenan varios modelos, parecido a los forests, usando metodos cuadrados como en el punto 1, cierto ?
+3. Ok si se usan minimos cuadrados, porque al final dice "para el entrenamiento de los regresores logisticos" ?
+   Que con eso ?
+4. Como hay que entrenar esos ensambles ? Parecido al punto 1 ? Aleatoriamente 80% train y 20% test ?
+5. Para la formula de la varianza, porque se debe usar el resultado del producto punto y no el tag o la probabilidad ?
+
+Punto 4:
+
+1. El punto 4 es cómo hay que probar el punto 3 ?
