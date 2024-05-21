@@ -20,6 +20,8 @@ Punto 3:
 4. Como hay que entrenar esos ensambles ? Parecido al punto 1 ? Aleatoriamente 80% train y 20% test ?
 5. Para la formula de la varianza, porque se debe usar el resultado del producto punto y no el tag o la probabilidad ?
 
+model -> el que hace el forward.
+
 Punto 4:
 
 1. El punto 4 es cómo hay que probar el punto 3 ?
