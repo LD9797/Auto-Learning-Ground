@@ -23,7 +23,7 @@ def split_dataset(data, tags, test_size=0.20):
     Default 80% train and 20% test.
     :returns: x_train, x_test, y_train, y_test
     """
-    x_train, x_test, y_train, y_test = train_test_split(data, tags, test_size=test_size)
+    x_train, x_test, y_train, y_test = train_test_split(data, tags)
     return x_train, x_test, y_train, y_test
 
 
@@ -37,7 +37,7 @@ def get_optimum_w_square_means(t, x):
     return w_opt
 
 
-def evaluate_model_original(data, w):
+def evaluate_model_original(data, w, activation_function=False):
     """
     Function to evaluate the model.
     It consists of the dot product between the data and the optimum w.
@@ -45,8 +45,9 @@ def evaluate_model_original(data, w):
     :returns: the estimated tags.
     """
     y_out = data.mm(w)
-    y_out[y_out >= 0] = 1
-    y_out[y_out < 0] = 0
+    if activation_function:
+        y_out[y_out >= 0] = 1
+        y_out[y_out < 0] = 0
     t_estimated = y_out
     return t_estimated
 
@@ -78,7 +79,7 @@ def run_30():
         # Testing model
         test = torch.tensor(x_test)
         test_targets = torch.tensor(y_test.to_numpy()).unsqueeze(1).to(torch.float64)
-        targets_estimated = evaluate_model_original(test, w_opt)
+        targets_estimated = evaluate_model_original(test, w_opt, activation_function=True)
 
         # Calculating error, accuracy and f1 score
         error = evaluate_mean_square_error(test_targets, targets_estimated)
@@ -116,6 +117,59 @@ def calculate_expected_calibration_error(probabilities, true_labels, n_bins=10):
     return ece.item()
 
 
+def calculate_expected_calibration_error_alt(x_in, y_true, uncertainties, n_bins=10):
+    bins = create_bins_and_append_prediction_to_values(uncertainties, y_true, n_bins)
+    accuracy_bins = [calculate_accuracy_bin(bins[bin_num]) for bin_num in bins]
+    pass  # TODO Create ECE graph
+
+
+def calculate_accuracy_bin(in_bin):
+    if len(in_bin) == 0:
+        return -1
+    correct_predictions = 0
+    for value in in_bin:
+        correct_predictions += 1 if value[1] else 0
+    total_predictions = len(in_bin)
+    accuracy = (correct_predictions / total_predictions) * 100
+    return accuracy
+
+
+def create_bins_and_append_prediction_to_values(values, y_true, n_bins):
+    # Define range and compute bin width
+    min_val, max_val = min(values), max(values)
+    bin_width = (max_val - min_val) / n_bins
+
+    # Create bins
+    bins = {i: [] for i in range(n_bins)}
+
+    # Assign values to bins
+    for value, true_label in zip(values, y_true):
+        index = int((value - min_val) / bin_width)
+        index = min(index, n_bins - 1)  # Ensure the value equal to max_val is included in the last bin
+        prediction = (value >= 0).to(torch.float64) == true_label
+        bins[index].append((value, prediction))
+
+    return bins
+
+
+def run_ece():
+    # Train model
+    x_train, x_test, y_train, y_test = split_dataset(X, y)
+    train = torch.tensor(x_train)
+    targets = torch.tensor(y_train.to_numpy()).unsqueeze(1).to(torch.float64)
+    w_opt = get_optimum_w_square_means(targets, train)
+
+    # Testing model
+    test = torch.tensor(x_test)
+    test_targets = torch.tensor(y_test.to_numpy()).unsqueeze(1).to(torch.float64)
+    targets_estimated = evaluate_model_original(test, w_opt)
+
+    calculate_expected_calibration_error_alt(test, test_targets, targets_estimated)
+
+
+run_ece()
+
+
 def test_calculate_expected_calibration_error_10_bins():
     samples = torch.tensor([[0.78], [0.36], [0.08], [0.58], [0.49], [0.85], [0.30], [0.63], [0.17]])
     true_labels = torch.tensor([[0], [1], [0], [0], [0], [0], [1], [1], [1]])
@@ -135,11 +189,7 @@ def test_calculate_expected_calibration_error_5_bins():
 def quantify_uncertainty_ensemble(x, model, n=10):
     ensembles = [train_ensemble() for i in range(n)]
     y_outputs = torch.tensor([run_ensemble_uq(x, ensemble, model) for ensemble in ensembles])
-    # TODO: replace for torch.var(y_outputs)
-    variance = 0
-    for y_output in y_outputs:
-        variance += (y_outputs.mean() - y_output) ** 2
-    variance = variance/(n-1)
+    variance = torch.var(y_outputs)
     return variance, y_outputs
 
 
@@ -154,6 +204,18 @@ def train_ensemble():
 def run_ensemble_uq(x, ensemble, model):
     y_out = model(x.unsqueeze(-1).t(), ensemble)
     return y_out
+
+
+def quantify_test():
+    variance = 0
+    while variance == 0:
+        x_train, _, y_train, _ = split_dataset(X, y)
+        x_in = torch.tensor(x_train[0]).to(torch.float64)
+        variance, y_outputs = quantify_uncertainty_ensemble(x_in, evaluate_model_original, n=20)
+        print(f"Real: {y_train.to_numpy()[0]}")
+        print(f"Predicted: {y_outputs[0]}")
+        print(f"Variance: {variance}")
+    print(variance)
 
 
 # 4. TODO Pending
