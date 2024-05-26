@@ -4,7 +4,9 @@ from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_sc
 import torch
 import torch.nn.functional as F
 import numpy as np
+import matplotlib.pyplot as plt
 import warnings
+from torchmetrics.regression import PearsonCorrCoef
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -119,13 +121,56 @@ def calculate_expected_calibration_error(probabilities, true_labels, n_bins=10):
 
 def calculate_expected_calibration_error_alt(x_in, y_true, uncertainties, n_bins=10):
     bins = create_bins_and_append_prediction_to_values(uncertainties, y_true, n_bins)
-    accuracy_bins = [calculate_accuracy_bin(bins[bin_num]) for bin_num in bins]
-    pass  # TODO Create ECE graph
+    accuracy_bins = torch.tensor([calculate_accuracy_bin(bins[bin_num]) for bin_num in bins])
+
+    # Plotting
+
+    # Define bins and values at the centers
+    bin_edges = torch.linspace(min(bins[0])[0].item(), max(bins[len(bins) - 1])[0].item(), steps=len(bins) + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    # Create the figure and axis
+    fig, ax = plt.subplots()
+
+    # Plot a dot in the middle of each bin
+    for center, value in zip(bin_centers, accuracy_bins):
+        ax.plot(center, value, 'ro')  # 'ro' for red circle
+
+    # Add a line for each bin edge
+    for edge in bin_edges:
+        ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
+
+    # Set axis labels and title
+    ax.set_xlabel('Bins')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Accuracy per Bin')
+
+    # Set y-axis limits to fit the range of bin values
+    ax.set_ylim(-10, 110)
+    ax.set_xlim(min(bin_edges), max(bin_edges))
+
+    # Show plot
+    plt.show()
+
+    # Pearson
+
+    # bin_centers -> X
+    # accuracy_bins -> Y
+    corr_matrix = torch.corrcoef(torch.stack((bin_centers, accuracy_bins)))
+    pearson_corr = corr_matrix[0, 1]
+
+    # Calculation with torch metrics
+    pearson = PearsonCorrCoef()
+    coeff = pearson(bin_centers, accuracy_bins)
+
+    # 
+
+
 
 
 def calculate_accuracy_bin(in_bin):
     if len(in_bin) == 0:
-        return -1
+        return 0
     correct_predictions = 0
     for value in in_bin:
         correct_predictions += 1 if value[1] else 0
@@ -134,6 +179,7 @@ def calculate_accuracy_bin(in_bin):
     return accuracy
 
 
+# TODO: remember, its the variance
 def create_bins_and_append_prediction_to_values(values, y_true, n_bins):
     # Define range and compute bin width
     min_val, max_val = min(values), max(values)
