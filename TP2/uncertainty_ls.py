@@ -1,5 +1,5 @@
 import codification
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 import torch
 import torch.nn.functional as F
@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import warnings
 from torchmetrics.regression import PearsonCorrCoef
+from sklearn.linear_model import LinearRegression
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -25,7 +26,7 @@ def split_dataset(data, tags, test_size=0.20):
     Default 80% train and 20% test.
     :returns: x_train, x_test, y_train, y_test
     """
-    x_train, x_test, y_train, y_test = train_test_split(data, tags)
+    x_train, x_test, y_train, y_test = train_test_split(data, tags, test_size=test_size)
     return x_train, x_test, y_train, y_test
 
 
@@ -93,41 +94,44 @@ def run_30():
     return log
 
 
-# 2. TODO Pending
-# Sigmoid implementation below.
+# 2. ECE
 
-def evaluate_model_sigmoid(data, w):
-    y_out = data.mm(w)
-    probabilities = F.sigmoid(y_out)  # Sigmoid to transform y_out to probabilities
-    t_estimated = (probabilities >= 0.5).float()  # Threshold probabilities to get binary labels
-    # Returns exact same t_estimated as 'evaluate_model_original'
-    return t_estimated, probabilities
-
-
-def calculate_expected_calibration_error(probabilities, true_labels, n_bins=10):
-    bin_limits = torch.linspace(0, 1, steps=n_bins+1)
-    ece = 0.0
-    for i in range(n_bins):
-        bin_mask = (probabilities >= bin_limits[i]) & (probabilities < bin_limits[i+1])
-        if bin_mask.any():
-            bin_probabilities = probabilities[bin_mask]
-            bin_labels = true_labels[bin_mask]
-            bin_accuracy = (bin_labels == (bin_probabilities >= 0.5).float()).float().mean()
-            bin_confidence = bin_probabilities.mean()
-            bin_error = torch.abs(bin_accuracy - bin_confidence)
-            ece += (bin_mask.float().mean() * bin_error)
-    return ece.item()
-
-
-def calculate_expected_calibration_error_alt(x_in, y_true, uncertainties, n_bins=10):
-    bins = create_bins_and_append_prediction_to_values(uncertainties, y_true, n_bins)
+def calculate_expected_calibration_error_alt(x_in, y_true, uncertainties, y_prediced, n_bins=10):
+    # Calculate bins ranges
+    bins = create_bins_and_append_prediction_to_values(uncertainties, y_true, y_prediced, n_bins)
+    # Calculate the accuracy of each bin
     accuracy_bins = torch.tensor([calculate_accuracy_bin(bins[bin_num]) for bin_num in bins])
-
-    # Plotting
 
     # Define bins and values at the centers
     bin_edges = torch.linspace(min(bins[0])[0].item(), max(bins[len(bins) - 1])[0].item(), steps=len(bins) + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    # bin_centers -> internal X
+    # accuracy_bins -> internal Y
+
+    # Pearson coefficient calculation
+
+    # Method 1: correlation matrix
+    corr_matrix = torch.corrcoef(torch.stack((bin_centers, accuracy_bins)))
+    pearson_corr = corr_matrix[0, 1]
+
+    # Method 2: calculation with torch metrics
+    pearson = PearsonCorrCoef()
+    coeff = pearson(bin_centers, accuracy_bins)
+
+    # Linear Regression model - Line that describes the points
+    model = LinearRegression()
+    model.fit(bin_centers.unsqueeze(-1), accuracy_bins.unsqueeze(-1))
+
+    # Calculate distances from the points to the line
+    m = torch.tensor(model.coef_[0])
+    c = torch.tensor(model.intercept_)
+    distances = torch.abs(m * bin_centers.flatten() - accuracy_bins + c) / torch.sqrt(m ** 2 + 1)
+
+    # Calculate mean distance
+    mean_distance_ece = torch.mean(distances)
+
+    # Plotting
 
     # Create the figure and axis
     fig, ax = plt.subplots()
@@ -149,23 +153,17 @@ def calculate_expected_calibration_error_alt(x_in, y_true, uncertainties, n_bins
     ax.set_ylim(-10, 110)
     ax.set_xlim(min(bin_edges), max(bin_edges))
 
+    # Predictions from the model
+    y_pred = model.predict(bin_centers.unsqueeze(-1))
+
+    for i in range(len(bin_centers)):
+        ax.plot([bin_centers[i].item(), bin_centers[i].item()], [accuracy_bins[i].item(), y_pred[i].item()], 'g-')  # Distance line
+
+    # Plotting linear regression line
+    ax.plot(torch.linspace(min(bin_edges).item(), max(bin_edges).item(), steps=len(bins)), y_pred, color='blue')
+
     # Show plot
     plt.show()
-
-    # Pearson
-
-    # bin_centers -> X
-    # accuracy_bins -> Y
-    corr_matrix = torch.corrcoef(torch.stack((bin_centers, accuracy_bins)))
-    pearson_corr = corr_matrix[0, 1]
-
-    # Calculation with torch metrics
-    pearson = PearsonCorrCoef()
-    coeff = pearson(bin_centers, accuracy_bins)
-
-    # 
-
-
 
 
 def calculate_accuracy_bin(in_bin):
@@ -179,89 +177,81 @@ def calculate_accuracy_bin(in_bin):
     return accuracy
 
 
-# TODO: remember, its the variance
-def create_bins_and_append_prediction_to_values(values, y_true, n_bins):
-    # Define range and compute bin width
-    min_val, max_val = min(values), max(values)
-    bin_width = (max_val - min_val) / n_bins
+def create_bins_and_append_prediction_to_values(uncertainties, y_true, y_predicted, n_bins):
+    # Convert uncertainties to numpy array for quantile calculations
+    uncertainties_np = np.array(uncertainties)
+
+    # Calculate quantiles to define bin edges
+    quantiles = np.linspace(0, 1, n_bins + 1)
+    bin_edges = np.quantile(uncertainties_np, quantiles)
 
     # Create bins
     bins = {i: [] for i in range(n_bins)}
 
     # Assign values to bins
-    for value, true_label in zip(values, y_true):
-        index = int((value - min_val) / bin_width)
+    for uncertainty, true_label, predicted_label in zip(uncertainties, y_true, y_predicted):
+        # Determine the bin index by finding the first bin edge that is greater than the uncertainty
+        index = np.searchsorted(bin_edges, uncertainty, side='right') - 1
         index = min(index, n_bins - 1)  # Ensure the value equal to max_val is included in the last bin
-        prediction = (value >= 0).to(torch.float64) == true_label
-        bins[index].append((value, prediction))
+        prediction = (predicted_label >= 0).to(torch.float64) == true_label
+        bins[index].append((uncertainty, prediction))
 
     return bins
 
 
-def run_ece():
-    # Train model
-    x_train, x_test, y_train, y_test = split_dataset(X, y)
-    train = torch.tensor(x_train)
-    targets = torch.tensor(y_train.to_numpy()).unsqueeze(1).to(torch.float64)
-    w_opt = get_optimum_w_square_means(targets, train)
-
-    # Testing model
-    test = torch.tensor(x_test)
-    test_targets = torch.tensor(y_test.to_numpy()).unsqueeze(1).to(torch.float64)
-    targets_estimated = evaluate_model_original(test, w_opt)
-
-    calculate_expected_calibration_error_alt(test, test_targets, targets_estimated)
-
-
-run_ece()
-
-
-def test_calculate_expected_calibration_error_10_bins():
-    samples = torch.tensor([[0.78], [0.36], [0.08], [0.58], [0.49], [0.85], [0.30], [0.63], [0.17]])
-    true_labels = torch.tensor([[0], [1], [0], [0], [0], [0], [1], [1], [1]])
-    ece = calculate_expected_calibration_error(samples, true_labels, n_bins=10)
-    assert round(ece, 3) == 0.538
-
-
-def test_calculate_expected_calibration_error_5_bins():
-    samples = torch.tensor([[0.78], [0.36], [0.08], [0.58], [0.49], [0.85], [0.30], [0.63], [0.17]])
-    true_labels = torch.tensor([[0], [1], [0], [0], [0], [0], [1], [1], [1]])
-    ece = calculate_expected_calibration_error(samples, true_labels, n_bins=5)
-    assert round(ece, 3) == 0.304
-
-
-# 3. TODO Pending
-
+# 3.
 def quantify_uncertainty_ensemble(x, model, n=10):
-    ensembles = [train_ensemble() for i in range(n)]
-    y_outputs = torch.tensor([run_ensemble_uq(x, ensemble, model) for ensemble in ensembles])
-    variance = torch.var(y_outputs)
-    return variance, y_outputs
+    ensembles = train_ensemble(n)
+    y_outputs = [run_ensemble_uq(x, ensemble, model) for ensemble in ensembles]
+    y_outputs_stacked = torch.stack(y_outputs).squeeze(-1).t()
+    variances = []
+    predictions = []
+    for y_out in y_outputs_stacked:
+        var_xi = torch.var(y_out)
+        predicted_y = torch.mean(y_out)
+        variances.append(var_xi)
+        predictions.append(predicted_y)
+    return torch.tensor(variances), torch.tensor(predictions)
 
 
-def train_ensemble():
-    x_train, _, y_train, _ = split_dataset(X, y)
-    train = torch.tensor(x_train)
-    targets = torch.tensor(y_train.to_numpy()).unsqueeze(1).to(torch.float64)
-    w_opt = get_optimum_w_square_means(targets, train)
-    return w_opt
+def train_ensemble(n):
+    x_train, _, y_train, _ = split_dataset(X, y, test_size=0.3)
+    train_splits = kfold_split(x_train, y_train.to_numpy(), n)
+    ensembles = []
+    for split in train_splits:
+        x_split = torch.tensor(split[0])
+        y_split = torch.tensor(split[1]).unsqueeze(1).to(torch.float64)
+        w_opt = get_optimum_w_square_means(y_split, x_split)
+        ensembles.append(w_opt)
+    return ensembles
+
+
+def kfold_split(features, labels, n_splits):
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)  # Using a random state for reproducibility
+    # This will store the training subsets and their corresponding labels
+    subsets = []
+
+    for train_index, test_index in kf.split(features):
+        feature_subset = features[test_index]
+        label_subset = labels[test_index]
+        subsets.append((feature_subset, label_subset))
+
+    return subsets
 
 
 def run_ensemble_uq(x, ensemble, model):
-    y_out = model(x.unsqueeze(-1).t(), ensemble)
+    y_out = model(x, ensemble)
     return y_out
 
 
 def quantify_test():
-    variance = 0
-    while variance == 0:
-        x_train, _, y_train, _ = split_dataset(X, y)
-        x_in = torch.tensor(x_train[0]).to(torch.float64)
-        variance, y_outputs = quantify_uncertainty_ensemble(x_in, evaluate_model_original, n=20)
-        print(f"Real: {y_train.to_numpy()[0]}")
-        print(f"Predicted: {y_outputs[0]}")
-        print(f"Variance: {variance}")
-    print(variance)
+    x_train, x_test, y_train, y_test = split_dataset(X, y)
+    # Individual entry: x_in = torch.tensor(x_test[0]).unsqueeze(-1).t().to(torch.float64)
+    x_test = torch.tensor(x_test)
+    variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n=20)
+    calculate_expected_calibration_error_alt(x_test, y_test, variance, y_outputs)
 
+
+quantify_test()
 
 # 4. TODO Pending
