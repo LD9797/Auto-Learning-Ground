@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 """
 This is the formatted code for the one-hot-vector encoding of the data. 

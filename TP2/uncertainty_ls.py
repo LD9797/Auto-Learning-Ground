@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import warnings
 from torchmetrics.regression import PearsonCorrCoef
 from sklearn.linear_model import LinearRegression
+import matplotlib.patches as mpatches
+import time
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -20,13 +22,13 @@ X, y = codification.perform_codification()
 
 # 1.
 
-def split_dataset(data, tags, test_size=0.20):
+def split_dataset(data, tags, test_size=0.20, random_state=None):
     """
     Function to partition the dataset.
     Default 80% train and 20% test.
     :returns: x_train, x_test, y_train, y_test
     """
-    x_train, x_test, y_train, y_test = train_test_split(data, tags, test_size=test_size)
+    x_train, x_test, y_train, y_test = train_test_split(data, tags, test_size=test_size, random_state=random_state)
     return x_train, x_test, y_train, y_test
 
 
@@ -96,7 +98,7 @@ def run_30():
 
 # 2. ECE
 
-def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicted, n_bins=10):
+def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicted, n_bins=10, plot=True):
     # Calculate bins ranges
     bins = create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins)
     # Calculate the accuracy of each bin
@@ -114,14 +116,11 @@ def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicte
     corr_matrix = torch.corrcoef(torch.stack((bin_average_uncertainty, accuracy_bins)))
     pearson_corr = corr_matrix[0, 1]
 
-    # Method 2: calculation with torch metrics
-    pearson = PearsonCorrCoef()
-    coeff = pearson(bin_average_uncertainty, accuracy_bins)
-
-    print(f"Pearson coefficient: {coeff}")
-
     # Plotting
-    plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty)
+    if plot:
+        plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty)
+
+    return (1 - torch.abs(pearson_corr)).item()
 
 
 def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins):
@@ -202,9 +201,10 @@ def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
 
 
 # 3.
-def quantify_uncertainty_ensemble(x, model, n=10):
-    ensemble = train_ensemble(n)
-    y_outputs = run_ensemble_uq(x, ensemble, model)
+def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None):
+    if ensemble is None:
+        ensemble = train_ensemble(n_ensemble)
+    y_outputs = run_ensemble_uq(x_test, ensemble, model)
     y_outputs_stacked = torch.stack(y_outputs).squeeze(-1).t()
     variances = []
     predictions = []
@@ -216,9 +216,10 @@ def quantify_uncertainty_ensemble(x, model, n=10):
     return torch.tensor(variances), torch.tensor(predictions)
 
 
-def train_ensemble(n):
-    x_train, _, y_train, _ = split_dataset(X, y, test_size=0.3)
-    train_splits = kfold_split(x_train, y_train.to_numpy(), n)
+def train_ensemble(n, x_train=None, y_train=None, random_state=None):
+    if x_train is None or y_train is None:
+        x_train, _, y_train, _ = split_dataset(X, y, test_size=0.3, random_state=random_state)
+    train_splits = kfold_split(x_train, y_train.to_numpy(), n, random_state=random_state)
     ensembles = []
     for split in train_splits:
         x_split = torch.tensor(split[0])
@@ -228,8 +229,8 @@ def train_ensemble(n):
     return ensembles
 
 
-def kfold_split(features, labels, n_splits):
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)  # Using a random state for reproducibility
+def kfold_split(features, labels, n_splits, random_state=None):
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)  # Using a random state for reproducibility
     # This will store the training subsets and their corresponding labels
     subsets = []
 
@@ -250,12 +251,79 @@ def quantify_test():
     x_train, x_test, y_train, y_test = split_dataset(X, y)
     # Individual entry: x_in = torch.tensor(x_test[0]).unsqueeze(-1).t().to(torch.float64)
     x_test = torch.tensor(x_test)
-    variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n=10)
-    calculate_expected_calibration_error(x_test, y_test, variance, y_outputs)
+    variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n_ensemble=10)
+    ece = calculate_expected_calibration_error(x_test, y_test, variance, y_outputs)
 
 
-quantify_test()
+# 4.
+def run_tests(n):
+    start_time = time.time()
 
-# 4. TODO Pending
+    x_train, x_test, y_train, y_test = split_dataset(X, y, test_size=0.30, random_state=42)
+    test_partitions = kfold_split(x_test, y_test.to_numpy(), n_splits=10, random_state=42)
+    train_partitions = kfold_split(x_train, y_train.to_numpy(), n_splits=10, random_state=42)
+
+    trained_ensemble = train_ensemble(n, x_train, y_train, random_state=42)
+    test_part_avg_ece, test_part_std = calculate_avg_ece_and_std_partition(test_partitions, trained_ensemble, "Test")
+    train_part_avg_ece, train_part_std = calculate_avg_ece_and_std_partition(train_partitions, trained_ensemble,
+                                                                             "Train")
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Results for configuration N={n}")
+    print(f"Elapsed time: {elapsed_time}")
+    print(f"Test Partition Average ECE: {test_part_avg_ece}, Test Partition Std: {test_part_std}")
+    print(f"Train Partition Average ECE: {train_part_avg_ece}, Test Partition Std: {train_part_std}")
+
+
+def calculate_avg_ece_and_std_partition(partition, ensemble, partition_label):
+    test_partition_ece = []
+    for part in partition:
+        x_partition = torch.tensor(part[0])
+        y_real_partition = torch.tensor(part[1]).unsqueeze(1).to(torch.float64)
+        variance, y_outputs = quantify_uncertainty_ensemble(x_partition, evaluate_model_original, ensemble=ensemble)
+        ece = calculate_expected_calibration_error(x_partition, y_real_partition, variance, y_outputs, plot=False)
+        test_partition_ece.append(ece)
+    test_partition_ece = torch.tensor(test_partition_ece)
+    average_ece = torch.mean(test_partition_ece)
+    std = torch.std(test_partition_ece)
+    plot_results(test_partition_ece, partition_label, average_ece, std, len(ensemble))
+    return average_ece, std
+
+
+def plot_results(test_partition_ece, partition_label, average_ece, std, n_configuration):
+    x_linspace = torch.linspace(0, len(test_partition_ece), steps=len(test_partition_ece) + 1)
+    y_centers = 0.5 * (x_linspace[:-1] + x_linspace[1:])
+
+    # Create the figure and axis.
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    # Plot a dot in the middle of each part.
+    for center, value in zip(y_centers, test_partition_ece):
+        ax.plot(center, value, 'ro')  # 'ro' for red circle
+
+    # Print average uncertainty for each bin in x-axis.
+    custom_ticks = [center for center in y_centers]
+    ax.set_xticks(custom_ticks)
+    ax.set_xticklabels([f"#{bin_num + 1}" for bin_num in range(len(test_partition_ece))])
+
+    # Add a line for each bin edge
+    for edge in x_linspace:
+        ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
+
+    ax.set_xlabel('Partition number')
+    ax.set_ylabel('ECE')
+    ax.set_title(f'{partition_label} Partition ECE values | Configuration N={n_configuration}'
+                 f' \n Average ECE: {round(average_ece.item(), 3)} '
+                 f'| Standard Deviation: {round(std.item(), 3)}')
+
+    plt.show()
+
+
+run_tests(10)
+run_tests(100)
+run_tests(1000)
+
+
 
 
