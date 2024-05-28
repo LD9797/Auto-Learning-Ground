@@ -1,14 +1,11 @@
+from torchmetrics import PearsonCorrCoef
+
 import codification
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score
 import torch
-import torch.nn.functional as F
-import numpy as np
 import matplotlib.pyplot as plt
 import warnings
-from torchmetrics.regression import PearsonCorrCoef
-from sklearn.linear_model import LinearRegression
-import matplotlib.patches as mpatches
 import time
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -112,20 +109,21 @@ def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicte
 
     # Pearson coefficient calculation
 
-    # Method 1: correlation matrix
-    corr_matrix = torch.corrcoef(torch.stack((bin_average_uncertainty, accuracy_bins)))
-    pearson_corr = corr_matrix[0, 1]
+    # Method 2: calculation with torch metrics
+    pearson = PearsonCorrCoef()
+    pearson_corr = pearson(bin_average_uncertainty, accuracy_bins).nan_to_num().item()
 
     # Plotting
     if plot:
         plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty)
 
-    return (1 - torch.abs(pearson_corr)).item()
+    ece = 1 - abs(pearson_corr)
+    return max(0, min(ece, 1))
 
 
 def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins):
     # Convert uncertainties to numpy array for quantile calculations
-    uncertainties_np = torch.tensor(uncertainties)
+    uncertainties_np = torch.tensor(uncertainties).to(torch.float64)
 
     # Calculate quantiles to define bin edges
     quantiles = torch.linspace(0, 1, n_bins + 1).to(torch.float64)
@@ -200,6 +198,28 @@ def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
     plt.show()
 
 
+def test_calculate_expected_calibration_error_worse_calibration():
+    example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
+    example_y_outputs = torch.tensor([0.871897, - 0.095776, - 0.199759, 1.157389, 0.4576, 0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
+    example_y_real = [0, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=False)
+    assert ece == 1
+    print(f"Passed! \nCalculated ECE: {ece} \nExpected: 1")
+
+
+def test_calculate_expected_calibration_error_perfect_calibration():
+    example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
+    example_y_outputs = torch.tensor([0.871897, -0.095776, -0.199759, 1.157389, -0.4576, -0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
+    example_y_real = [1, 0, 0, 1, 0, 0, 1, 1, 1, 1]
+    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=False)
+    assert ece == 0
+    print(f"Passed! \nCalculated ECE: {ece} \nExpected: 0")
+
+
+test_calculate_expected_calibration_error_worse_calibration()
+test_calculate_expected_calibration_error_perfect_calibration()
+
+
 # 3.
 def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None):
     if ensemble is None:
@@ -254,6 +274,8 @@ def quantify_test():
     variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n_ensemble=10)
     ece = calculate_expected_calibration_error(x_test, y_test, variance, y_outputs)
 
+# quantify_test()
+
 
 # 4.
 def run_tests(n):
@@ -298,16 +320,16 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
     # Create the figure and axis.
     fig, ax = plt.subplots(figsize=(10, 7))
 
-    # Plot a dot in the middle of each part.
+    # Plot a dot in the middle.
     for center, value in zip(y_centers, test_partition_ece):
         ax.plot(center, value, 'ro')  # 'ro' for red circle
 
-    # Print average uncertainty for each bin in x-axis.
+    # Print labels.
     custom_ticks = [center for center in y_centers]
     ax.set_xticks(custom_ticks)
     ax.set_xticklabels([f"#{bin_num + 1}" for bin_num in range(len(test_partition_ece))])
 
-    # Add a line for each bin edge
+    # Add a line for each partition.
     for edge in x_linspace:
         ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
 
@@ -320,9 +342,9 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
     plt.show()
 
 
-run_tests(10)
-run_tests(100)
-run_tests(1000)
+#run_tests(10)
+#run_tests(100)
+#run_tests(1000)
 
 
 
