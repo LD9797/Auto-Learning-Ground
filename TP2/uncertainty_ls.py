@@ -96,17 +96,17 @@ def run_30():
 
 # 2. ECE
 
-def calculate_expected_calibration_error_alt(x_in, y_real, uncertainties, y_predicted, n_bins=10):
+def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicted, n_bins=10):
     # Calculate bins ranges
     bins = create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins)
     # Calculate the accuracy of each bin
     accuracy_bins = torch.tensor([calculate_accuracy_bin(bins[bin_num]) for bin_num in bins])
+
     # Calculate the average uncertainty of each bin
     bin_average_uncertainty = [sum(data[0] for data in bins[in_bin]) / len(bins[in_bin]) for in_bin in bins]
     bin_average_uncertainty = torch.tensor(bin_average_uncertainty)
 
-    # bin_average_uncertainty -> Acts as X
-    # accuracy_bins -> Acts as Y
+    # bin_average_uncertainty -> Acts as X | accuracy_bins -> Acts as Y
 
     # Pearson coefficient calculation
 
@@ -118,75 +118,32 @@ def calculate_expected_calibration_error_alt(x_in, y_real, uncertainties, y_pred
     pearson = PearsonCorrCoef()
     coeff = pearson(bin_average_uncertainty, accuracy_bins)
 
-    # Linear Regression model - Line that describes the points
-    model = LinearRegression()
-    model.fit(bin_average_uncertainty.unsqueeze(-1), accuracy_bins.unsqueeze(-1))
-
-    # Calculate distances from the points to the line
-    m = torch.tensor(model.coef_[0])
-    c = torch.tensor(model.intercept_)
-    distances = torch.abs(m * bin_average_uncertainty.flatten() - accuracy_bins + c) / torch.sqrt(m ** 2 + 1)
-
-    # Calculate mean distance
-    mean_distance_ece = torch.mean(distances)
-
     print(f"Pearson coefficient: {coeff}")
-    print(f"Mean Distance ECE: {mean_distance_ece}")
 
     # Plotting
+    plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty)
 
-    bin_edges_visual = torch.linspace(min(bins[0])[0].item(), max(bins[len(bins) - 1])[0].item(), steps=len(bins) + 1)
-    bin_centers_visual = 0.5 * (bin_edges_visual[:-1] + bin_edges_visual[1:])
 
-    # Create the figure and axis
-    fig, ax = plt.subplots(figsize=(10, 7))
+def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins):
+    # Convert uncertainties to numpy array for quantile calculations
+    uncertainties_np = torch.tensor(uncertainties)
 
-    # Plot a dot in the middle of each bin
-    for center, value in zip(bin_centers_visual, accuracy_bins):
-        ax.plot(center, value, 'ro')  # 'ro' for red circle
+    # Calculate quantiles to define bin edges
+    quantiles = torch.linspace(0, 1, n_bins + 1).to(torch.float64)
+    bin_edges = torch.quantile(uncertainties_np, quantiles)
 
-    # Print average uncertainty for each bin
-    custom_ticks = [center for center in bin_centers_visual]
-    ax.set_xticks(custom_ticks)  # Set the positions for the ticks
-    ax.set_xticklabels([f"#{bin_num + 1}" for bin_num in range(len(bin_average_uncertainty))])  # Set the custom labels for the ticks
+    # Create bins
+    bins = {i: [] for i in range(n_bins)}
 
-    # Add a line for each bin edge
-    for edge in bin_edges_visual:
-        ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
+    # Assign values to bins
+    for uncertainty, real_label, predicted_label in zip(uncertainties, y_real, y_predicted):
+        # Determine the bin index by finding the first bin edge that is greater than the uncertainty
+        index = torch.searchsorted(bin_edges, uncertainty, right=True) - 1
+        index = min(index.item(), n_bins - 1)  # Ensure the value equal to max_val is included in the last bin
+        prediction = (predicted_label >= 0).to(torch.float64) == real_label
+        bins[index].append((uncertainty, prediction))
 
-    # Set axis labels and title
-    ax.set_xlabel('')
-    ax.set_ylabel('Accuracy')
-    ax.set_title('Accuracy per Bin')
-
-    # Set y-axis limits to fit the range of bin values
-    ax.set_ylim(-10, 110)
-
-    # Print bin number in secondary axis.
-    ax2 = ax.twiny()
-    ax2.xaxis.set_ticks_position('bottom')
-    ax2.xaxis.set_label_position('bottom')
-    ax2.spines['bottom'].set_position(('outward', 17))
-    ax2.set_xlabel('Bin Number and Average Uncertainty (Variance)')
-    ax2.set_xticks(custom_ticks)
-    custom_labels = [f"{"{:.1e}".format(round(bin_num.item(), 5))}" for index, bin_num in enumerate(bin_average_uncertainty)]
-    ax2.set_xticklabels(custom_labels)
-    ax2.set_xlim(ax.get_xlim())
-    ax2.spines['bottom'].set_visible(False)
-    # ax.set_xlim(min(bin_edges), max(bin_edges))
-
-    # Predictions from the model
-    # y_pred = model.predict(bin_centers.unsqueeze(-1))
-
-    # Distance line
-    # for i in range(len(bin_centers)):
-    # ax.plot([bin_centers[i].item(), bin_centers[i].item()], [accuracy_bins[i].item(), y_pred[i].item()], 'g-')
-
-    # Plotting linear regression line
-    # ax.plot(torch.linspace(min(bin_centers).item(), max(bin_centers).item(), steps=len(bins)), y_pred, color='blue')
-
-    # Show plot
-    plt.show()
+    return bins
 
 
 def calculate_accuracy_bin(in_bin):
@@ -200,26 +157,48 @@ def calculate_accuracy_bin(in_bin):
     return accuracy
 
 
-def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins):
-    # Convert uncertainties to numpy array for quantile calculations
-    uncertainties_np = np.array(uncertainties)
+def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
+    bin_edges_visual = torch.linspace(min(bins[0])[0].item(), max(bins[len(bins) - 1])[0].item(), steps=len(bins) + 1)
+    bin_centers_visual = 0.5 * (bin_edges_visual[:-1] + bin_edges_visual[1:])
 
-    # Calculate quantiles to define bin edges
-    quantiles = np.linspace(0, 1, n_bins + 1)
-    bin_edges = np.quantile(uncertainties_np, quantiles)
+    # Create the figure and axis.
+    fig, ax = plt.subplots(figsize=(10, 7))
 
-    # Create bins
-    bins = {i: [] for i in range(n_bins)}
+    # Plot a dot in the middle of each bin.
+    for center, value in zip(bin_centers_visual, accuracy_bins):
+        ax.plot(center, value, 'ro')  # 'ro' for red circle
 
-    # Assign values to bins
-    for uncertainty, real_label, predicted_label in zip(uncertainties, y_real, y_predicted):
-        # Determine the bin index by finding the first bin edge that is greater than the uncertainty
-        index = np.searchsorted(bin_edges, uncertainty, side='right') - 1
-        index = min(index, n_bins - 1)  # Ensure the value equal to max_val is included in the last bin
-        prediction = (predicted_label >= 0).to(torch.float64) == real_label
-        bins[index].append((uncertainty, prediction))
+    # Print average uncertainty for each bin in x-axis.
+    custom_ticks = [center for center in bin_centers_visual]
+    ax.set_xticks(custom_ticks)
+    ax.set_xticklabels([f"#{bin_num + 1}" for bin_num in range(len(bin_average_uncertainty))])
 
-    return bins
+    # Add a line for each bin edge
+    for edge in bin_edges_visual:
+        ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
+
+    # Set axis labels and title.
+    ax.set_xlabel('')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Accuracy per Bin for ECE calculation')
+
+    # Set y-axis limits to fit the range of bin values.
+    ax.set_ylim(-10, 110)
+
+    # Print bin number in secondary x-axis.
+    ax2 = ax.twiny()
+    ax2.xaxis.set_ticks_position('bottom')
+    ax2.xaxis.set_label_position('bottom')
+    ax2.spines['bottom'].set_position(('outward', 17))
+    ax2.set_xlabel('Bin Number and Average Uncertainty (Variance)')
+    ax2.set_xticks(custom_ticks)
+    custom_labels = [f"{"{:.1e}".format(round(bin_num.item(), 5))}" for index, bin_num in
+                     enumerate(bin_average_uncertainty)]
+    ax2.set_xticklabels(custom_labels)
+    ax2.set_xlim(ax.get_xlim())
+    ax2.spines['bottom'].set_visible(False)
+
+    plt.show()
 
 
 # 3.
@@ -272,7 +251,7 @@ def quantify_test():
     # Individual entry: x_in = torch.tensor(x_test[0]).unsqueeze(-1).t().to(torch.float64)
     x_test = torch.tensor(x_test)
     variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n=10)
-    calculate_expected_calibration_error_alt(x_test, y_test, variance, y_outputs)
+    calculate_expected_calibration_error(x_test, y_test, variance, y_outputs)
 
 
 quantify_test()
