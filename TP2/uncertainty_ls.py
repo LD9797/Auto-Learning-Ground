@@ -352,6 +352,7 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
 
     ax.set_xlabel('Partition number')
     ax.set_ylabel('ECE')
+    ax.set_ylim(0, 1)
     ax.set_title(f'{partition_label} Partition ECE values | Configuration N={n_configuration}'
                  f' \n Average ECE: {round(average_ece.item(), 3)} '
                  f'| Standard Deviation: {round(std.item(), 3)}')
