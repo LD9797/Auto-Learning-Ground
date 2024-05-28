@@ -15,7 +15,6 @@ df = pd.read_csv('UNSW_NB15_training-set.csv')
 def basic_pre_processing():
     list_drop = ['id', 'attack_cat']
     df.drop(list_drop, axis=1, inplace=True)
-    # df.hist(column="label")
 
 
 def codification_cat_data():

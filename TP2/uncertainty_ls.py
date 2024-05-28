@@ -203,8 +203,8 @@ def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
 
 # 3.
 def quantify_uncertainty_ensemble(x, model, n=10):
-    ensembles = train_ensemble(n)
-    y_outputs = [run_ensemble_uq(x, ensemble, model) for ensemble in ensembles]
+    ensemble = train_ensemble(n)
+    y_outputs = run_ensemble_uq(x, ensemble, model)
     y_outputs_stacked = torch.stack(y_outputs).squeeze(-1).t()
     variances = []
     predictions = []
@@ -242,8 +242,8 @@ def kfold_split(features, labels, n_splits):
 
 
 def run_ensemble_uq(x, ensemble, model):
-    y_out = model(x, ensemble)
-    return y_out
+    y_outputs = [model(x, indv_ensemble) for indv_ensemble in ensemble]
+    return y_outputs
 
 
 def quantify_test():
