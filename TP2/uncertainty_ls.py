@@ -216,14 +216,10 @@ def test_calculate_expected_calibration_error_perfect_calibration():
     print(f"Passed! \nCalculated ECE: {ece} \nExpected: 0")
 
 
-test_calculate_expected_calibration_error_worse_calibration()
-test_calculate_expected_calibration_error_perfect_calibration()
-
-
 # 3.
-def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None):
+def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None, random_state=None):
     if ensemble is None:
-        ensemble = train_ensemble(n_ensemble)
+        ensemble = train_ensemble(n_ensemble, random_state=random_state)
     y_outputs = run_ensemble_uq(x_test, ensemble, model)
     y_outputs_stacked = torch.stack(y_outputs).squeeze(-1).t()
     variances = []
@@ -267,14 +263,35 @@ def run_ensemble_uq(x, ensemble, model):
     return y_outputs
 
 
-def quantify_test():
-    x_train, x_test, y_train, y_test = split_dataset(X, y)
-    # Individual entry: x_in = torch.tensor(x_test[0]).unsqueeze(-1).t().to(torch.float64)
-    x_test = torch.tensor(x_test)
-    variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, n_ensemble=10)
-    ece = calculate_expected_calibration_error(x_test, y_test, variance, y_outputs)
+def test_quantify_uncertainty_ensemble_individual_entry():
+    # Splitting dataset with random state 42 to ensure reproducibility
+    x_train, x_test, y_train, y_test = split_dataset(X, y, random_state=42)
+    # Individual entry:
+    entry = torch.tensor(x_test[0]).unsqueeze(-1).t().to(torch.float64)
+    variance, y_outputs = quantify_uncertainty_ensemble(entry, evaluate_model_original, n_ensemble=10, random_state=42)
+    variance = round(variance.item(), 3)
+    y_outputs = round(y_outputs.item(), 3)
+    assert variance == 0.002
+    assert y_outputs == 0.011
+    print("Single Entry Test:")
+    print(f"Result: Passed! \nCalculated Variance: {variance} \nExpected: {0.002}")
+    print(f"Estimated Output: {y_outputs} \nExpected: {0.011}")
 
-# quantify_test()
+
+def test_quantify_uncertainty_ensemble_multiple_entry():
+    # Splitting dataset with random state 42 to ensure reproducibility
+    x_train, x_test, y_train, y_test = split_dataset(X, y, random_state=42)
+    # Gathering entries:
+    x_test = torch.tensor(x_test)
+    entries = torch.stack([x_test[0], x_test[1], x_test[2]])
+    variance, y_outputs = quantify_uncertainty_ensemble(entries, evaluate_model_original, n_ensemble=10, random_state=42)
+    variance = [round(x, 4) for x in list(variance.numpy())]
+    y_outputs = [round(x, 4) for x in list(y_outputs.numpy())]
+    assert variance == [0.0024, 0.0001, 0.0004]
+    assert y_outputs == [0.0108, 0.9777, 0.8247]
+    print("Multiple Entry Test:")
+    print(f"Result: Passed! \nCalculated Variance: {variance} \nExpected: [0.0024, 0.0001, 0.0004]")
+    print(f"Estimated Outputs: {y_outputs} \nExpected: [0.0108, 0.9777, 0.8247]")
 
 
 # 4.
