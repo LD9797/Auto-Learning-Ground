@@ -1,0 +1,16 @@
+Tiempo:
+
+Con respecto al tiempo, este aumenta entre mayor número de pesos tenga el ensamble. Esto es de esperarse porque
+entre mayor sea el ensamble, hay más cálculos por conjunto
+
+ECE promedio:
+
+El ECE promedio en la partición de prueba y entrenamiento aumenta inicialmente a medida que el número de miembros del conjunto aumenta de 10 a 100,
+pero luego disminuye a medida que el número llega a 1000. Esto podría sugerir un sobreajuste, ya que los modelos más específicos del conjunto pueden ajustarse al ruido en lugar de a los patrones de datos subyacentes.
+La disminución en 1000 podría indicar una mejor generalización.
+
+Desviación estándar
+
+La desviación estándar de ECE entre las particiones de prueba y entrenamiento disminuye ligeramente a medida que aumenta el número de pesos por ensamble.
+Esto sugiere que los conjuntos más grandes proporcionan una calibración más consistente en diferentes particiones de prueba.
+

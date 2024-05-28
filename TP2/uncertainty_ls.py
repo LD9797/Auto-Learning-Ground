@@ -441,6 +441,10 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
     plt.show()
 
 
+results = run_tests(100)
+
+
+
 #run_tests(10)
 #run_tests(100)
 #run_tests(1000)
