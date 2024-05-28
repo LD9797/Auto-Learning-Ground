@@ -96,6 +96,11 @@ def run_30():
 # 2. ECE
 
 def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicted, n_bins=10, plot=True):
+    """
+    Calculates ECE by comparing bin average uncertainties with bin accuracies using Pearson coefficient.
+    Uses n_bins for grouping uncertainties, default is 10. Can optionally plot the accuracy chart.
+    :return: normalized ECE value between 0 and 1
+    """
     # Calculate bins ranges
     bins = create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins)
     # Calculate the accuracy of each bin
@@ -122,6 +127,12 @@ def calculate_expected_calibration_error(x_in, y_real, uncertainties, y_predicte
 
 
 def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predicted, n_bins):
+    """
+    Groups predictions into bins based on uncertainty quantiles.
+    Maps each prediction to a bin for subsequent accuracy and uncertainty calculations.
+    Also checks if predictions match real labels.
+    :return: Dictionary of bins with each bin containing tuples of (uncertainty, prediction match).
+    """
     # Convert uncertainties to numpy array for quantile calculations
     uncertainties_np = torch.tensor(uncertainties).to(torch.float64)
 
@@ -144,6 +155,11 @@ def create_bins_and_append_prediction_to_values(uncertainties, y_real, y_predict
 
 
 def calculate_accuracy_bin(in_bin):
+    """
+    Calculates the percentage accuracy for a bin of predictions.
+    If the bin is empty, returns 0.
+    :return: Accuracy as a percentage of correct predictions in the bin.
+    """
     if len(in_bin) == 0:
         return 0
     correct_predictions = 0
@@ -155,6 +171,12 @@ def calculate_accuracy_bin(in_bin):
 
 
 def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
+    """
+    Plots a chart showing the accuracy per bin along with the average uncertainty.
+    Visualizes each bin's accuracy with red dots and dashed lines for bin edges.
+    Enhances the x-axis with custom tick labels showing bin numbers and average uncertainty.
+    :return: None; displays the plot directly.
+    """
     bin_edges_visual = torch.linspace(min(bins[0])[0].item(), max(bins[len(bins) - 1])[0].item(), steps=len(bins) + 1)
     bin_centers_visual = 0.5 * (bin_edges_visual[:-1] + bin_edges_visual[1:])
 
@@ -199,6 +221,12 @@ def plot_bin_accuracy_chart(bins, accuracy_bins, bin_average_uncertainty):
 
 
 def test_calculate_expected_calibration_error_worse_calibration():
+    """
+    Tests the calculate_expected_calibration_error function to ensure it returns an ECE of 1,
+    indicating maximum miscalibration, under predefined worse calibration conditions.
+    Asserts the correctness of the ECE calculation.
+    :return: Prints success message with calculated ECE and expected value.
+    """
     example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
     example_y_outputs = torch.tensor([0.871897, - 0.095776, - 0.199759, 1.157389, 0.4576, 0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
     example_y_real = [0, 1, 1, 0, 0, 0, 0, 0, 0, 0]
@@ -208,6 +236,12 @@ def test_calculate_expected_calibration_error_worse_calibration():
 
 
 def test_calculate_expected_calibration_error_perfect_calibration():
+    """
+    Tests the calculate_expected_calibration_error function to ensure it returns an ECE of 0,
+    indicating perfect calibration, under predefined perfect calibration conditions.
+    Asserts the correctness of the ECE calculation.
+    :return: Prints success message with calculated ECE and expected value.
+    """
     example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
     example_y_outputs = torch.tensor([0.871897, -0.095776, -0.199759, 1.157389, -0.4576, -0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
     example_y_real = [1, 0, 0, 1, 0, 0, 1, 1, 1, 1]
@@ -218,6 +252,11 @@ def test_calculate_expected_calibration_error_perfect_calibration():
 
 # 3.
 def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None, random_state=None):
+    """
+    Generates ensemble predictions and calculates the variance and mean prediction for each test sample.
+    Uses an ensemble of models to quantify uncertainty in predictions.
+    :return: Tensors of variances and mean predictions.
+    """
     if ensemble is None:
         ensemble = train_ensemble(n_ensemble, random_state=random_state)
     y_outputs = run_ensemble_uq(x_test, ensemble, model)
@@ -233,6 +272,11 @@ def quantify_uncertainty_ensemble(x_test, model, n_ensemble=10, ensemble=None, r
 
 
 def train_ensemble(n, x_train=None, y_train=None, random_state=None):
+    """
+    Trains an ensemble of models using K-fold training subsets.
+    Handles data splitting if training data is not provided.
+    :return: List of trained ensemble weights.
+    """
     if x_train is None or y_train is None:
         x_train, _, y_train, _ = split_dataset(X, y, test_size=0.3, random_state=random_state)
     train_splits = kfold_split(x_train, y_train.to_numpy(), n, random_state=random_state)
@@ -246,6 +290,10 @@ def train_ensemble(n, x_train=None, y_train=None, random_state=None):
 
 
 def kfold_split(features, labels, n_splits, random_state=None):
+    """
+    Splits the dataset into training and testing subsets using K-fold cross-validation.
+    :return: List of tuples containing feature subsets and corresponding labels for each fold.
+    """
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)  # Using a random state for reproducibility
     # This will store the training subsets and their corresponding labels
     subsets = []
@@ -259,11 +307,20 @@ def kfold_split(features, labels, n_splits, random_state=None):
 
 
 def run_ensemble_uq(x, ensemble, model):
+    """
+    Generates ensemble predictions by running the model with each ensemble member on input x.
+    :return: List of outputs from each ensemble model.
+    """
     y_outputs = [model(x, indv_ensemble) for indv_ensemble in ensemble]
     return y_outputs
 
 
 def test_quantify_uncertainty_ensemble_individual_entry():
+    """
+    Tests the quantify_uncertainty_ensemble function for a single test entry.
+    Ensures the calculated variance and output matches expected values for a consistent dataset.
+    :return: Prints results and asserts the correct computation of variance and output.
+    """
     # Splitting dataset with random state 42 to ensure reproducibility
     x_train, x_test, y_train, y_test = split_dataset(X, y, random_state=42)
     # Individual entry:
@@ -279,6 +336,11 @@ def test_quantify_uncertainty_ensemble_individual_entry():
 
 
 def test_quantify_uncertainty_ensemble_multiple_entry():
+    """
+    Tests the quantify_uncertainty_ensemble function for multiple test entries.
+    Ensures the calculated variance and outputs match expected values for a set of consistent test data.
+    :return: Prints results and asserts the correct computation for an array of variances and outputs.
+    """
     # Splitting dataset with random state 42 to ensure reproducibility
     x_train, x_test, y_train, y_test = split_dataset(X, y, random_state=42)
     # Gathering entries:
@@ -296,6 +358,11 @@ def test_quantify_uncertainty_ensemble_multiple_entry():
 
 # 4.
 def run_tests(n):
+    """
+    Runs tests on both training and testing partitions to evaluate the ensemble's calibration.
+    Records time taken for the complete operation, computes average ECE and standard deviation for both partitions.
+    :return: Dictionary containing test results including time elapsed and ECE metrics.
+    """
     start_time = time.time()
 
     x_train, x_test, y_train, y_test = split_dataset(X, y, test_size=0.30, random_state=42)
@@ -309,13 +376,22 @@ def run_tests(n):
 
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Results for configuration N={n}")
-    print(f"Elapsed time: {elapsed_time}")
-    print(f"Test Partition Average ECE: {test_part_avg_ece}, Test Partition Std: {test_part_std}")
-    print(f"Train Partition Average ECE: {train_part_avg_ece}, Test Partition Std: {train_part_std}")
+
+    results = {
+        f"N={n}": {"Elapsed time": elapsed_time, "Test Partition Average ECE": round(test_part_avg_ece.item(), 4),
+                   "Test Partition Std": round(test_part_std.item(), 4),
+                   "Train Part Average ECE": round(train_part_avg_ece.item(), 4),
+                   "Train Partition Std": round(train_part_std.item(), 4)}}
+
+    return results
 
 
 def calculate_avg_ece_and_std_partition(partition, ensemble, partition_label):
+    """
+    Calculates average Expected Calibration Error (ECE) and standard deviation across a given partition using an ensemble.
+    Evaluates each partition's calibration and aggregates results.
+    :return: Average ECE and standard deviation for the specified partition.
+    """
     test_partition_ece = []
     for part in partition:
         x_partition = torch.tensor(part[0])
@@ -331,6 +407,11 @@ def calculate_avg_ece_and_std_partition(partition, ensemble, partition_label):
 
 
 def plot_results(test_partition_ece, partition_label, average_ece, std, n_configuration):
+    """
+    Plots ECE values across different partitions, highlighting the average ECE and standard deviation.
+    Visualizes calibration performance for a given ensemble configuration.
+    :return: None; displays a plot.
+    """
     x_linspace = torch.linspace(0, len(test_partition_ece), steps=len(test_partition_ece) + 1)
     y_centers = 0.5 * (x_linspace[:-1] + x_linspace[1:])
 
