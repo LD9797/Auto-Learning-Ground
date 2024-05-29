@@ -356,6 +356,8 @@ def test_quantify_uncertainty_ensemble_multiple_entry():
     print(f"Estimated Outputs: {y_outputs} \nExpected: [0.0108, 0.9777, 0.8247]")
 
 
+test_quantify_uncertainty_ensemble_multiple_entry()
+
 # 4.
 def run_tests(n):
     """
@@ -441,7 +443,7 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
     plt.show()
 
 
-results = run_tests(100)
+# results = run_tests(100)
 
 
 
