@@ -1,5 +1,5 @@
 from torchmetrics import PearsonCorrCoef
-
+import pandas as pd
 import codification
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import f1_score, accuracy_score
@@ -230,7 +230,7 @@ def test_calculate_expected_calibration_error_worse_calibration():
     example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
     example_y_outputs = torch.tensor([0.871897, - 0.095776, - 0.199759, 1.157389, 0.4576, 0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
     example_y_real = [0, 1, 1, 0, 0, 0, 0, 0, 0, 0]
-    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=False)
+    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=True)
     assert ece == 1
     print(f"Passed! \nCalculated ECE: {ece} \nExpected: 1")
 
@@ -245,9 +245,12 @@ def test_calculate_expected_calibration_error_perfect_calibration():
     example_variances = torch.tensor([0.000814, 0.000343, 0.000491, 0.000273, 0.000321, 0.000325, 0.000034, 0.000678, 0.000084, 0.00041])
     example_y_outputs = torch.tensor([0.871897, -0.095776, -0.199759, 1.157389, -0.4576, -0.455021, 0.95016, 0.559645, 0.901524, 0.493699])
     example_y_real = [1, 0, 0, 1, 0, 0, 1, 1, 1, 1]
-    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=False)
+    ece = calculate_expected_calibration_error(None, example_y_real, example_variances, example_y_outputs, plot=True)
     assert ece == 0
     print(f"Passed! \nCalculated ECE: {ece} \nExpected: 0")
+
+
+# test_calculate_expected_calibration_error_perfect_calibration()
 
 
 # 3.
@@ -356,59 +359,50 @@ def test_quantify_uncertainty_ensemble_multiple_entry():
     print(f"Estimated Outputs: {y_outputs} \nExpected: [0.0108, 0.9777, 0.8247]")
 
 
-test_quantify_uncertainty_ensemble_multiple_entry()
-
 # 4.
 def run_tests(n):
     """
-    Runs tests on both training and testing partitions to evaluate the ensemble's calibration.
-    Records time taken for the complete operation, computes average ECE and standard deviation for both partitions.
-    :return: Dictionary containing test results including time elapsed and ECE metrics.
+    Executes multiple testing cycles on ensemble models to measure calibration error.
+    Runs tests across 10 different dataset splits to calculate and analyze ECE.
+    Calculates average ECE, its standard deviation, and logs each test's results.
+    :return: A dictionary with overall results including elapsed time and ECE statistics,
+             and a dictionary with ECE results per iteration.
     """
+    # List to save ECE scores per iteration (partition)
+    calculated_ece_list = []
+
     start_time = time.time()
+    for i in range(10):
+        # Splitting using random_state to ensure reproducibility
+        x_train, x_test, y_train, y_test = split_dataset(X, y, test_size=0.30, random_state=42 + i)
+        # Training ensemble
+        trained_ensemble = train_ensemble(n, x_train, y_train, random_state=42 + i)
+        x_test = torch.tensor(x_test)
+        variance, y_outputs = quantify_uncertainty_ensemble(x_test, evaluate_model_original, ensemble=trained_ensemble)
+        ece = calculate_expected_calibration_error(x_test, y_train, variance, y_outputs, plot=False)
+        calculated_ece_list.append(ece)
 
-    x_train, x_test, y_train, y_test = split_dataset(X, y, test_size=0.30, random_state=42)
-    test_partitions = kfold_split(x_test, y_test.to_numpy(), n_splits=10, random_state=42)
-    train_partitions = kfold_split(x_train, y_train.to_numpy(), n_splits=10, random_state=42)
-
-    trained_ensemble = train_ensemble(n, x_train, y_train, random_state=42)
-    test_part_avg_ece, test_part_std = calculate_avg_ece_and_std_partition(test_partitions, trained_ensemble, "Test")
-    train_part_avg_ece, train_part_std = calculate_avg_ece_and_std_partition(train_partitions, trained_ensemble,
-                                                                             "Train")
+    # Calculate average ECE and STD from calculated_ece_list
+    calculated_ece_list = torch.tensor(calculated_ece_list)
+    avg_ece = torch.mean(calculated_ece_list)
+    std = torch.std(calculated_ece_list)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
 
-    results = {
-        f"N={n}": {"Elapsed time": elapsed_time, "Test Partition Average ECE": round(test_part_avg_ece.item(), 4),
-                   "Test Partition Std": round(test_part_std.item(), 4),
-                   "Train Part Average ECE": round(train_part_avg_ece.item(), 4),
-                   "Train Partition Std": round(train_part_std.item(), 4)}}
+    # Preparing Results to display
+    results = {f"N={n}": {"Elapsed time": elapsed_time,
+                          "Average ECE": round(avg_ece.item(), 4),
+                          "Standard Deviation": round(std.item(), 4)}}
 
-    return results
+    results_per_iteration = {f"Iteration #{index + 1}": round(data.item(), 4) for index, data in
+                             enumerate(calculated_ece_list)}
 
-
-def calculate_avg_ece_and_std_partition(partition, ensemble, partition_label):
-    """
-    Calculates average Expected Calibration Error (ECE) and standard deviation across a given partition using an ensemble.
-    Evaluates each partition's calibration and aggregates results.
-    :return: Average ECE and standard deviation for the specified partition.
-    """
-    test_partition_ece = []
-    for part in partition:
-        x_partition = torch.tensor(part[0])
-        y_real_partition = torch.tensor(part[1]).unsqueeze(1).to(torch.float64)
-        variance, y_outputs = quantify_uncertainty_ensemble(x_partition, evaluate_model_original, ensemble=ensemble)
-        ece = calculate_expected_calibration_error(x_partition, y_real_partition, variance, y_outputs, plot=False)
-        test_partition_ece.append(ece)
-    test_partition_ece = torch.tensor(test_partition_ece)
-    average_ece = torch.mean(test_partition_ece)
-    std = torch.std(test_partition_ece)
-    plot_results(test_partition_ece, partition_label, average_ece, std, len(ensemble))
-    return average_ece, std
+    plot_results(calculated_ece_list, avg_ece, std, n)
+    return results, results_per_iteration
 
 
-def plot_results(test_partition_ece, partition_label, average_ece, std, n_configuration):
+def plot_results(test_partition_ece, average_ece, std, n_configuration):
     """
     Plots ECE values across different partitions, highlighting the average ECE and standard deviation.
     Visualizes calibration performance for a given ensemble configuration.
@@ -433,19 +427,22 @@ def plot_results(test_partition_ece, partition_label, average_ece, std, n_config
     for edge in x_linspace:
         ax.axvline(edge, color='red', linestyle='dashed', linewidth=1)
 
-    ax.set_xlabel('Partition number')
+    # Adding Labels to Chart
+    ax.set_xlabel('Partition number (iteration)')
     ax.set_ylabel('ECE')
     ax.set_ylim(0, 1)
-    ax.set_title(f'{partition_label} Partition ECE values | Configuration N={n_configuration}'
-                 f' \n Average ECE: {round(average_ece.item(), 3)} '
-                 f'| Standard Deviation: {round(std.item(), 3)}')
+    ax.set_title(f'Partitions ECE values | Configuration N={n_configuration}'
+                 f' \n Average ECE: {round(average_ece.item(), 4)} '
+                 f'| Standard Deviation: {round(std.item(), 4)}')
 
     plt.show()
-
-
 # results = run_tests(100)
 
 
+# Running the tests for the configuration with N = 10
+results, results_per_iteration = run_tests(1000)
+results_data_frame = pd.DataFrame.from_dict(results)
+results_per_iteration_data_frame = pd.DataFrame(results_per_iteration, index=["ECE"])
 
 #run_tests(10)
 #run_tests(100)
